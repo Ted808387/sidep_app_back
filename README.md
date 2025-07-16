@@ -101,8 +101,72 @@
 7.  **定義 Pydantic Schemas (schemas.py)：**
     *   為每個資料庫模型創建對應的 Pydantic 模型，用於 FastAPI 的請求驗證和響應序列化。這將確保 API 傳輸的資料格式正確。
 
-### **實作流程：**
+---
 
-我將從第一步開始：**設定資料庫連接**。
+## 後端開發進度
 
-我會在 `sidep_backend` 資料夾中創建一個 `database.py` 檔案，並配置 SQLAlchemy。
+### 階段一：專案初始化與資料庫設定
+
+1.  **創建後端專案資料夾：**
+    *   在 `sidep_app` 的同層目錄下創建了 `sidep_backend` 資料夾。
+
+2.  **複製開發計畫到後端專案：**
+    *   將 `sidep_app/BACKEND_DEV_PLAN.md` 的內容複製到 `sidep_backend/README.md`。
+
+3.  **初始化 Python 虛擬環境與安裝核心套件：**
+    *   在 `sidep_backend` 資料夾內創建並啟用了 Python 虛擬環境 (`venv`)。
+    *   安裝了 `fastapi` 和 `uvicorn`。
+
+4.  **創建 FastAPI 應用程式入口檔案：**
+    *   在 `sidep_backend` 資料夾內創建了 `main.py`，包含一個基本的 FastAPI 應用和根路由。
+
+5.  **PostgreSQL 安裝與設定：**
+    *   使用者手動安裝了 PostgreSQL (版本 14.18)。
+    *   確認 PostgreSQL 服務已啟動。
+    *   透過 `psql` 創建了資料庫使用者 `sidep_user` 和資料庫 `sidep_db`。
+    *   在 `sidep_backend` 虛擬環境中安裝了 `psycopg2-binary` (PostgreSQL 驅動) 和 `SQLAlchemy` (ORM)。
+
+### 階段二：資料庫模型與 API 認證實作
+
+1.  **設定資料庫連接 (database.py)：**
+    *   創建了 `sidep_backend/database.py` 檔案，配置了 SQLAlchemy 的資料庫引擎、會話和聲明基類。
+
+2.  **定義資料庫模型 (models.py)：**
+    *   創建了 `sidep_backend/models.py` 檔案，並定義了 `User`、`Service`、`Booking`、`BusinessHour`、`Holiday` 和 `UnavailableDate` 等核心資料庫模型。
+    *   修正了 `models.py` 中 `Base` 導入的問題，確保所有模型都正確註冊到 `database.py` 的 `Base` 物件上。
+
+3.  **初始化資料庫表格：**
+    *   修改了 `sidep_backend/main.py`，在應用程式啟動時自動創建所有定義在 `models.py` 中的資料庫表格。
+    *   修正了 `main.py` 中導入 `database` 和 `models` 的方式，從相對導入改為絕對導入，解決了 `ImportError`。
+
+4.  **定義 Pydantic Schemas (schemas.py)：**
+    *   創建了 `sidep_backend/schemas.py` 檔案，並為所有核心資料庫模型定義了對應的 Pydantic Schemas (Base, Create, Response)。
+    *   安裝了 `email-validator` 函式庫，解決了 Pydantic `EmailStr` 類型驗證的依賴問題。
+
+5.  **實作用戶認證 API 端點：**
+    *   安裝了 `passlib[bcrypt]` 用於密碼雜湊。
+    *   在 `sidep_backend/main.py` 中實作了 `/auth/register` (用戶註冊) 和 `/auth/login` (用戶登入) API 端點。
+    *   修正了 `login` 函數的參數類型為 `schemas.UserCreate`。
+    *   成功測試了用戶註冊和登入功能。
+
+### 階段三：服務管理 API 實作
+
+1.  **實作服務管理 API 端點：**
+    *   在 `sidep_backend/main.py` 中添加了 `service_router`，包含了以下端點：
+        *   `GET /services/`：獲取所有服務列表。
+        *   `GET /services/{service_id}`：獲取單一服務。
+        *   `POST /services/`：新增服務 (待添加管理員權限驗證)。
+        *   `PUT /services/{service_id}`：更新服務 (待添加管理員權限驗證)。
+        *   `DELETE /services/{service_id}`：刪除服務 (待添加管理員權限驗證)。
+    *   成功測試了所有服務管理 API 端點 (新增、獲取、更新、刪除)。
+
+**目前狀態：**
+
+*   後端專案 `sidep_backend` 已建立，並配置了 Python 虛擬環境。
+*   FastAPI 和 Uvicorn 已安裝並正常運行。
+*   PostgreSQL 已安裝並運行，`sidep_db` 資料庫和所有預期的表格已成功創建。
+*   所有核心資料庫模型和 Pydantic Schemas 已定義。
+*   用戶認證 API 端點已實作並測試成功。
+*   服務管理 API 端點已實作並測試成功。
+
+**下一步：** 實作預約管理 API 端點。
