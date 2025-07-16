@@ -48,3 +48,61 @@
 7.  **實作認證與授權：**
     *   在 FastAPI 中實作 JWT (JSON Web Tokens) 認證，並根據用戶角色實作基於角色的訪問控制 (RBAC)。
 
+---
+
+## 資料庫模型大綱
+
+根據專案的需求，我們需要以下核心資料庫表格 (Entities) 來儲存應用程式的資料：
+
+1.  **User (用戶)**
+    *   **用途：** 儲存所有使用者資訊，包括客戶和管理員。
+    *   **欄位範例：** `id` (主鍵), `email` (唯一), `password` (雜湊後), `name`, `phone_number`, `role` (例如 customer, admin), `registration_date`。
+    *   **關係：** 一個用戶可以有多個預約。
+
+2.  **Service (服務項目)**
+    *   **用途：** 儲存所有可提供的服務項目資訊。
+    *   **欄位範例：** `id` (主鍵), `name`, `description`, `price`, `duration` (或 `min_duration`, `max_duration`), `is_active` (是否上架), `category` (可選), `image_url` (可選)。
+    *   **關係：** 一個服務項目可以有多個預約。
+
+3.  **Booking (預約)**
+    *   **用途：** 儲存客戶的預約資訊。
+    *   **欄位範例：** `id` (主鍵), `user_id` (外鍵，關聯到 User), `service_id` (外鍵，關聯到 Service), `date`, `time`, `status` (例如 pending, confirmed, cancelled, completed), `notes` (備註), `created_at`, `updated_at`。
+    *   **關係：** 一個預約屬於一個用戶和一個服務項目。
+
+4.  **BusinessSetting (營業設定)**
+    *   **用途：** 儲存店舖的營業時間、假日、不可預約日期和可預約時段等。這部分可以拆分成多個小表或合併。為了清晰起見，我們可以考慮以下子模型：
+        *   **BusinessHour (營業時間):** `id`, `day_of_week`, `open_time`, `close_time`
+        *   **Holiday (假日):** `id`, `date`, `description`
+        *   **UnavailableDate (不可預約日期):** `id`, `date`, `reason`
+        *   **BookableTimeSlot (可預約時段):** `id`, `start_time`, `end_time` (這可能更適合動態生成，而不是固定儲存)
+
+## 資料庫模型建立步驟
+
+我建議按照以下邏輯順序來建立這些模型：
+
+1.  **設定資料庫連接 (database.py)：**
+    *   創建一個 `database.py` 檔案，用於配置 SQLAlchemy 的資料庫引擎、會話 (Session) 和聲明基類 (Base)。這是所有模型定義的基礎。
+
+2.  **定義 User 模型 (models/user.py 或 models.py)：**
+    *   首先定義 `User` 模型，因為它是許多其他操作的基礎。
+
+3.  **定義 Service 模型 (models/service.py 或 models.py)：**
+    *   `Service` 模型相對獨立，可以接著定義。
+
+4.  **定義 Booking 模型 (models/booking.py 或 models.py)：**
+    *   `Booking` 模型需要引用 `User` 和 `Service`，所以要在它們之後定義。
+
+5.  **定義 Business Settings 相關模型 (models/settings.py 或 models.py)：**
+    *   `BusinessHour`, `Holiday`, `UnavailableDate` 等模型可以獨立定義，或根據複雜度合併。
+
+6.  **初始化資料庫表格：**
+    *   在 `main.py` 或一個單獨的腳本中，添加程式碼來創建所有定義好的資料庫表格。
+
+7.  **定義 Pydantic Schemas (schemas.py)：**
+    *   為每個資料庫模型創建對應的 Pydantic 模型，用於 FastAPI 的請求驗證和響應序列化。這將確保 API 傳輸的資料格式正確。
+
+### **實作流程：**
+
+我將從第一步開始：**設定資料庫連接**。
+
+我會在 `sidep_backend` 資料夾中創建一個 `database.py` 檔案，並配置 SQLAlchemy。
