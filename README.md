@@ -160,6 +160,38 @@
         *   `DELETE /services/{service_id}`：刪除服務 (待添加管理員權限驗證)。
     *   成功測試了所有服務管理 API 端點 (新增、獲取、更新、刪除)。
 
+### 階段四：預約管理 API 實作
+
+1.  **實作預約管理 API 端點：**
+    *   在 `sidep_backend/main.py` 中添加了 `booking_router`，包含了以下端點：
+        *   `POST /bookings/`：創建預約 (待添加用戶認證和時間可用性檢查)。
+        *   `GET /bookings/my`：獲取當前用戶的預約紀錄 (待從認證中獲取用戶 ID)。
+        *   `GET /bookings/`：獲取所有預約 (待添加管理員權限驗證)。
+        *   `PUT /bookings/{booking_id}/status`：更新預約狀態 (待添加管理員權限驗證)。
+        *   `DELETE /bookings/{booking_id}`：刪除預約 (待添加管理員權限驗證)。
+    *   成功測試了所有預約管理 API 端點 (創建、獲取、更新狀態、刪除)。
+
+### 階段五：客戶管理 API 實作
+
+1.  **實作客戶管理 API 端點：**
+    *   在 `sidep_backend/main.py` 中添加了 `client_router`，包含了以下端點：
+        *   `GET /admin/clients/`：獲取所有客戶列表 (待添加管理員權限驗證)。
+        *   `GET /admin/clients/{client_id}`：獲取單一客戶詳細資訊 (待添加管理員權限驗證)。
+        *   `PUT /admin/clients/{client_id}`：更新客戶的詳細資訊 (待添加管理員權限驗證)。
+    *   成功測試了所有客戶管理 API 端點 (獲取、更新)。
+
+### 階段六：營業設定管理 API 實作
+
+1.  **實作營業設定管理 API 端點：**
+    *   在 `sidep_backend/main.py` 中添加了 `business_settings_router`，包含了以下端點：
+        *   `GET /admin/settings/`：獲取營業設定 (待添加管理員權限驗證)。
+        *   `PUT /admin/settings/business-hours`：更新營業時間 (待添加管理員權限驗證)。
+        *   `POST /admin/settings/holidays`：新增假日 (待添加管理員權限驗證)。
+        *   `DELETE /admin/settings/holidays/{holiday_date}`：刪除假日 (待添加管理員權限驗證)。
+        *   `POST /admin/settings/unavailable-dates`：新增不可預約日期 (待添加管理員權限驗證)。
+        *   `DELETE /admin/settings/unavailable-dates/{unavailable_date}`：刪除不可預約日期 (待添加管理員權限驗證)。
+    *   成功測試了所有營業設定管理 API 端點 (獲取、更新營業時間、新增/刪除假日、新增/刪除不可預約日期)。
+
 **目前狀態：**
 
 *   後端專案 `sidep_backend` 已建立，並配置了 Python 虛擬環境。
@@ -168,5 +200,8 @@
 *   所有核心資料庫模型和 Pydantic Schemas 已定義。
 *   用戶認證 API 端點已實作並測試成功。
 *   服務管理 API 端點已實作並測試成功。
+*   預約管理 API 端點已實作並測試成功。
+*   客戶管理 API 端點已實作並測試成功。
+*   營業設定管理 API 端點已實作並測試成功。
 
-**下一步：** 實作預約管理 API 端點。
+**下一步：** 實作完整的 JWT 認證與授權。

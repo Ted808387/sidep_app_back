@@ -1,6 +1,6 @@
 from pydantic import BaseModel, EmailStr, Field
 from datetime import datetime, date, time
-from typing import Optional
+from typing import Optional, List
 
 # User Schemas
 class UserBase(BaseModel):
@@ -96,6 +96,14 @@ class UnavailableDateCreate(UnavailableDateBase):
 
 class UnavailableDateResponse(UnavailableDateBase):
     id: int
+
+    class Config:
+        from_attributes = True
+
+class BusinessSettingsResponse(BaseModel):
+    business_hours: List[BusinessHourResponse]
+    holidays: List[HolidayResponse]
+    unavailable_dates: List[UnavailableDateResponse]
 
     class Config:
         from_attributes = True

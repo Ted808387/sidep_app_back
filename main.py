@@ -2,7 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException, status, APIRouter
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 from typing import List
-from datetime import date, datetime
+from datetime import date, datetime, time
 
 from database import engine, Base, get_db
 import models, schemas
@@ -153,6 +153,125 @@ async def delete_booking(booking_id: int, db: Session = Depends(get_db)):
     return
 
 app.include_router(booking_router)
+
+# 客戶管理路由 (管理員專用)
+client_router = APIRouter(prefix="/admin/clients", tags=["Admin - Clients"])
+
+@client_router.get("/", response_model=List[schemas.UserResponse])
+async def get_all_clients(db: Session = Depends(get_db)):
+    # TODO: 這裡需要添加管理員權限驗證
+    clients = db.query(models.User).filter(models.User.role == "customer").all()
+    return clients
+
+@client_router.get("/{client_id}", response_model=schemas.UserResponse)
+async def get_client(client_id: int, db: Session = Depends(get_db)):
+    # TODO: 這裡需要添加管理員權限驗證
+    client = db.query(models.User).filter(models.User.id == client_id, models.User.role == "customer").first()
+    if client is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
+    return client
+
+@client_router.put("/{client_id}", response_model=schemas.UserResponse)
+async def update_client(client_id: int, client_update: schemas.UserBase, db: Session = Depends(get_db)):
+    # TODO: 這裡需要添加管理員權限驗證
+    db_client = db.query(models.User).filter(models.User.id == client_id, models.User.role == "customer").first()
+    if db_client is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
+    
+    # 不允許直接更新密碼和角色，這些應該有單獨的端點或更嚴格的控制
+    update_data = client_update.model_dump(exclude_unset=True)
+    update_data.pop("password", None) # 確保不更新密碼
+    update_data.pop("role", None) # 確保不更新角色
+
+    for key, value in update_data.items():
+        setattr(db_client, key, value)
+    
+    db.commit()
+    db.refresh(db_client)
+    return db_client
+
+app.include_router(client_router)
+
+# 營業設定路由 (管理員專用)
+business_settings_router = APIRouter(prefix="/admin/settings", tags=["Admin - Business Settings"])
+
+@business_settings_router.get("/", response_model=schemas.BusinessSettingsResponse)
+async def get_business_settings(db: Session = Depends(get_db)):
+    # TODO: 這裡需要添加管理員權限驗證
+    business_hours = db.query(models.BusinessHour).all()
+    holidays = db.query(models.Holiday).all()
+    unavailable_dates = db.query(models.UnavailableDate).all()
+    
+    return schemas.BusinessSettingsResponse(
+        business_hours=business_hours,
+        holidays=holidays,
+        unavailable_dates=unavailable_dates
+    )
+
+@business_settings_router.put("/business-hours", response_model=List[schemas.BusinessHourResponse])
+async def update_business_hours(hours: List[schemas.BusinessHourCreate], db: Session = Depends(get_db)):
+    # TODO: 這裡需要添加管理員權限驗證
+    # 簡單的更新邏輯：先刪除所有舊的，再新增新的
+    db.query(models.BusinessHour).delete()
+    db.commit()
+    
+    new_hours = []
+    for hour in hours:
+        db_hour = models.BusinessHour(**hour.model_dump())
+        db.add(db_hour)
+        new_hours.append(db_hour)
+    db.commit()
+    return new_hours
+
+@business_settings_router.post("/holidays", response_model=schemas.HolidayResponse, status_code=status.HTTP_201_CREATED)
+async def add_holiday(holiday: schemas.HolidayCreate, db: Session = Depends(get_db)):
+    # TODO: 這裡需要添加管理員權限驗證
+    db_holiday = db.query(models.Holiday).filter(models.Holiday.date == holiday.date).first()
+    if db_holiday:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Holiday already exists for this date")
+    
+    db_holiday = models.Holiday(**holiday.model_dump())
+    db.add(db_holiday)
+    db.commit()
+    db.refresh(db_holiday)
+    return db_holiday
+
+@business_settings_router.delete("/holidays/{holiday_date}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_holiday(holiday_date: date, db: Session = Depends(get_db)):
+    # TODO: 這裡需要添加管理員權限驗證
+    db_holiday = db.query(models.Holiday).filter(models.Holiday.date == holiday_date).first()
+    if db_holiday is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Holiday not found")
+    
+    db.delete(db_holiday)
+    db.commit()
+    return
+
+@business_settings_router.post("/unavailable-dates", response_model=schemas.UnavailableDateResponse, status_code=status.HTTP_201_CREATED)
+async def add_unavailable_date(unavailable_date: schemas.UnavailableDateCreate, db: Session = Depends(get_db)):
+    # TODO: 這裡需要添加管理員權限驗證
+    db_unavailable_date = db.query(models.UnavailableDate).filter(models.UnavailableDate.date == unavailable_date.date).first()
+    if db_unavailable_date:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unavailable date already exists")
+    
+    db_unavailable_date = models.UnavailableDate(**unavailable_date.model_dump())
+    db.add(db_unavailable_date)
+    db.commit()
+    db.refresh(db_unavailable_date)
+    return db_unavailable_date
+
+@business_settings_router.delete("/unavailable-dates/{unavailable_date}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_unavailable_date(unavailable_date: date, db: Session = Depends(get_db)):
+    # TODO: 這裡需要添加管理員權限驗證
+    db_unavailable_date = db.query(models.UnavailableDate).filter(models.UnavailableDate.date == unavailable_date).first()
+    if db_unavailable_date is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unavailable date not found")
+    
+    db.delete(db_unavailable_date)
+    db.commit()
+    return
+
+app.include_router(business_settings_router)
 
 @app.get("/")
 async def read_root():
