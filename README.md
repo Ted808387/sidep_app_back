@@ -192,6 +192,25 @@
         *   `DELETE /admin/settings/unavailable-dates/{unavailable_date}`：刪除不可預約日期 (待添加管理員權限驗證)。
     *   成功測試了所有營業設定管理 API 端點 (獲取、更新營業時間、新增/刪除假日、新增/刪除不可預約日期)。
 
+### 階段七：實作完整的 JWT 認證與授權
+
+1.  **安裝 JWT 函式庫：**
+    *   安裝了 `python-jose[cryptography]`。
+
+2.  **配置 JWT 相關參數：**
+    *   在 `main.py` 中定義了 `SECRET_KEY`、`ALGORITHM` 和 `ACCESS_TOKEN_EXPIRE_MINUTES`。
+
+3.  **實作 JWT 工具函數：**
+    *   `create_access_token`：用於生成 JWT Token。
+    *   `get_current_user`：用於驗證 Token 並獲取當前用戶。
+    *   `get_current_admin_user`：用於檢查用戶是否為管理員。
+
+4.  **應用 JWT 認證與授權：**
+    *   將 `Depends(get_current_user)` 或 `Depends(get_current_admin_user)` 應用到所有需要保護的 API 端點。
+    *   修正了 `main.py` 中 `HTTPBearer` 實例化時不應包含 `tokenUrl` 參數的問題，以確保 Swagger UI 正確顯示 Bearer Token 輸入框。
+    *   修正了 `JWTError: Subject must be a string` 的問題，確保 `sub` 聲明為字串。
+    *   **成功測試了 JWT 認證與授權功能，確認受保護的端點可以正常訪問。**
+
 **目前狀態：**
 
 *   後端專案 `sidep_backend` 已建立，並配置了 Python 虛擬環境。
@@ -203,5 +222,6 @@
 *   預約管理 API 端點已實作並測試成功。
 *   客戶管理 API 端點已實作並測試成功。
 *   營業設定管理 API 端點已實作並測試成功。
+*   **完整的 JWT 認證與授權已實作並測試成功。**
 
-**下一步：** 實作完整的 JWT 認證與授權。
+**下一步：** 替換前端的 `dataService`，使其呼叫實際的後端 API。
