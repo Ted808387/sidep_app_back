@@ -85,3 +85,13 @@ class UnavailableDate(Base):
 
     def __repr__(self):
         return f"<UnavailableDate(id={self.id}, date={self.date}, reason={self.reason})>"
+
+class BookableTimeSlot(Base):
+    __tablename__ = "bookable_time_slots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    start_time = Column(Time, nullable=False)
+    end_time = Column(Time, nullable=False)
+
+    def __repr__(self):
+        return f"<BookableTimeSlot(id={self.id}, start_time={self.start_time}, end_time={self.end_time})>"

@@ -5,6 +5,7 @@ from typing import List, Optional
 from datetime import date, datetime, time, timedelta
 from jose import JWTError, jwt
 from fastapi.security import HTTPBearer
+from fastapi.middleware.cors import CORSMiddleware
 
 from database import engine, Base, get_db
 import models, schemas
@@ -25,6 +26,19 @@ app = FastAPI(
         }
     },
     security=[{"BearerAuth": []}]
+)
+
+origins = [
+    "http://localhost",
+    "http://localhost:5173",
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # 創建所有資料庫表格
@@ -103,7 +117,7 @@ async def register_user(user: schemas.UserCreate, db: Session = Depends(get_db))
     return db_user
 
 @auth_router.post("/login")
-async def login_for_access_token(user_data: schemas.UserCreate, db: Session = Depends(get_db)):
+async def login_for_access_token(user_data: schemas.UserLogin, db: Session = Depends(get_db)):
     db_user = db.query(models.User).filter(models.User.email == user_data.email).first()
     if not db_user or not verify_password(user_data.password, db_user.password):
         raise HTTPException(
@@ -155,6 +169,17 @@ async def update_service(service_id: int, service: schemas.ServiceCreate, db: Se
     db.refresh(db_service)
     return db_service
 
+@service_router.patch("/{service_id}/status", response_model=schemas.ServiceResponse)
+async def update_service_status(service_id: int, status_update: schemas.ServiceStatusUpdate, db: Session = Depends(get_db), current_user: schemas.UserResponse = Depends(get_current_admin_user)):
+    db_service = db.query(models.Service).filter(models.Service.id == service_id).first()
+    if db_service is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
+    
+    db_service.is_active = status_update.is_active
+    db.commit()
+    db.refresh(db_service)
+    return db_service
+
 @service_router.delete("/{service_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_service(service_id: int, db: Session = Depends(get_db), current_user: schemas.UserResponse = Depends(get_current_admin_user)):
     db_service = db.query(models.Service).filter(models.Service.id == service_id).first()
@@ -164,6 +189,27 @@ async def delete_service(service_id: int, db: Session = Depends(get_db), current
     db.delete(db_service)
     db.commit()
     return
+
+@service_router.post("/bulk-action", status_code=status.HTTP_200_OK)
+async def bulk_service_action(request: schemas.BulkServiceActionRequest, db: Session = Depends(get_db), current_user: schemas.UserResponse = Depends(get_current_admin_user)):
+    if request.action not in ["activate", "deactivate", "delete"]:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid action specified")
+
+    services_to_update = db.query(models.Service).filter(models.Service.id.in_(request.service_ids)).all()
+
+    if not services_to_update:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No services found for the given IDs")
+
+    for service in services_to_update:
+        if request.action == "activate":
+            service.is_active = True
+        elif request.action == "deactivate":
+            service.is_active = False
+        elif request.action == "delete":
+            db.delete(service)
+
+    db.commit()
+    return {"message": f"Services {request.action}d successfully"}
 
 app.include_router(service_router)
 
@@ -205,6 +251,24 @@ async def update_booking_status(booking_id: int, status: str, db: Session = Depe
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
     
     db_booking.status = status
+    db.commit()
+    db.refresh(db_booking)
+    return db_booking
+
+@booking_router.put("/{booking_id}", response_model=schemas.BookingResponse)
+async def update_booking(booking_id: int, booking_update: schemas.BookingUpdate, db: Session = Depends(get_db), current_user: schemas.UserResponse = Depends(get_current_user)):
+    db_booking = db.query(models.Booking).filter(models.Booking.id == booking_id).first()
+    if db_booking is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
+    
+    # 只有管理員可以修改狀態，普通用戶只能修改備註
+    if current_user.role == "customer" and booking_update.status is not None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Customers cannot change booking status")
+
+    update_data = booking_update.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(db_booking, key, value)
+    
     db.commit()
     db.refresh(db_booking)
     return db_booking
@@ -261,6 +325,43 @@ business_settings_router = APIRouter(prefix="/admin/settings", tags=["Admin - Bu
 
 @business_settings_router.get("/", response_model=schemas.BusinessSettingsResponse)
 async def get_business_settings(db: Session = Depends(get_db), current_user: schemas.UserResponse = Depends(get_current_admin_user)):
+    business_hours = db.query(models.BusinessHour).all()
+    holidays = db.query(models.Holiday).all()
+    unavailable_dates = db.query(models.UnavailableDate).all()
+    
+    return schemas.BusinessSettingsResponse(
+        business_hours=business_hours,
+        holidays=holidays,
+        unavailable_dates=unavailable_dates
+    )
+
+@business_settings_router.put("/", response_model=schemas.BusinessSettingsResponse)
+async def update_business_settings(settings: schemas.BusinessSettingsUpdate, db: Session = Depends(get_db), current_user: schemas.UserResponse = Depends(get_current_admin_user)):
+    # 更新營業時間
+    if settings.business_hours is not None:
+        db.query(models.BusinessHour).delete()
+        for hour in settings.business_hours:
+            db_hour = models.BusinessHour(**hour.model_dump())
+            db.add(db_hour)
+
+    # 更新假日
+    if settings.holidays is not None:
+        db.query(models.Holiday).delete()
+        for holiday in settings.holidays:
+            db_holiday = models.Holiday(**holiday.model_dump())
+            db.add(db_holiday)
+
+    # 更新不可預約日期
+    if settings.unavailable_dates is not None:
+        db.query(models.UnavailableDate).delete()
+        for unavailable_date in settings.unavailable_dates:
+            db_unavailable_date = models.UnavailableDate(**unavailable_date.model_dump())
+            db.add(db_unavailable_date)
+
+    db.commit()
+    db.refresh(current_user) # 刷新 current_user 以確保其是最新的
+
+    # 返回更新後的完整設定
     business_hours = db.query(models.BusinessHour).all()
     holidays = db.query(models.Holiday).all()
     unavailable_dates = db.query(models.UnavailableDate).all()
@@ -329,7 +430,56 @@ async def delete_unavailable_date(unavailable_date: date, db: Session = Depends(
     db.commit()
     return
 
+@business_settings_router.post("/time-slots", response_model=schemas.BookableTimeSlotResponse, status_code=status.HTTP_201_CREATED)
+async def add_time_slot(time_slot: schemas.BookableTimeSlotCreate, db: Session = Depends(get_db), current_user: schemas.UserResponse = Depends(get_current_admin_user)):
+    db_time_slot = models.BookableTimeSlot(**time_slot.model_dump())
+    db.add(db_time_slot)
+    db.commit()
+    db.refresh(db_time_slot)
+    return db_time_slot
+
+@business_settings_router.delete("/time-slots/{time_slot_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_time_slot(time_slot_id: int, db: Session = Depends(get_db), current_user: schemas.UserResponse = Depends(get_current_admin_user)):
+    db_time_slot = db.query(models.BookableTimeSlot).filter(models.BookableTimeSlot.id == time_slot_id).first()
+    if db_time_slot is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Time slot not found")
+    
+    db.delete(db_time_slot)
+    db.commit()
+    return
+
 app.include_router(business_settings_router)
+
+# 使用者個人資料路由
+user_router = APIRouter(prefix="/users", tags=["Users"])
+
+@user_router.get("/me", response_model=schemas.UserResponse)
+async def read_users_me(current_user: models.User = Depends(get_current_user)):
+    return current_user
+
+@user_router.put("/me", response_model=schemas.UserResponse)
+async def update_user_me(user_update: schemas.UserUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    update_data = user_update.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(current_user, key, value)
+    db.add(current_user)
+    db.commit()
+    db.refresh(current_user)
+    return current_user
+
+@user_router.post("/me/change-password")
+async def change_password_me(password_update: schemas.PasswordUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    if not verify_password(password_update.current_password, current_user.password):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Incorrect current password")
+    
+    hashed_password = get_password_hash(password_update.new_password)
+    current_user.password = hashed_password
+    db.add(current_user)
+    db.commit()
+    
+    return {"message": "Password updated successfully"}
+
+app.include_router(user_router)
 
 @app.get("/")
 async def read_root():

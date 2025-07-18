@@ -20,6 +20,18 @@ class UserResponse(UserBase):
     class Config:
         from_attributes = True # 允許從 ORM 對象創建 Pydantic 模型
 
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+class UserUpdate(BaseModel):
+    name: Optional[str] = None
+    phone_number: Optional[str] = None
+
+class PasswordUpdate(BaseModel):
+    current_password: str
+    new_password: str = Field(..., min_length=6)
+
 # Service Schemas
 class ServiceBase(BaseModel):
     name: str
@@ -38,6 +50,13 @@ class ServiceResponse(ServiceBase):
 
     class Config:
         from_attributes = True
+
+class ServiceStatusUpdate(BaseModel):
+    is_active: bool
+
+class BulkServiceActionRequest(BaseModel):
+    action: str # e.g., "activate", "deactivate", "delete"
+    service_ids: List[int]
 
 # Booking Schemas
 class BookingBase(BaseModel):
@@ -58,6 +77,10 @@ class BookingResponse(BookingBase):
 
     class Config:
         from_attributes = True
+
+class BookingUpdate(BaseModel):
+    notes: Optional[str] = None
+    status: Optional[str] = None # 允許更新狀態
 
 # Business Settings Schemas
 class BusinessHourBase(BaseModel):
@@ -104,6 +127,24 @@ class BusinessSettingsResponse(BaseModel):
     business_hours: List[BusinessHourResponse]
     holidays: List[HolidayResponse]
     unavailable_dates: List[UnavailableDateResponse]
+
+    class Config:
+        from_attributes = True
+
+class BusinessSettingsUpdate(BaseModel):
+    business_hours: Optional[List[BusinessHourCreate]] = None
+    holidays: Optional[List[HolidayCreate]] = None
+    unavailable_dates: Optional[List[UnavailableDateCreate]] = None
+
+class BookableTimeSlotBase(BaseModel):
+    start_time: time
+    end_time: time
+
+class BookableTimeSlotCreate(BookableTimeSlotBase):
+    pass
+
+class BookableTimeSlotResponse(BookableTimeSlotBase):
+    id: int
 
     class Config:
         from_attributes = True

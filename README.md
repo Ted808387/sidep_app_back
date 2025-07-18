@@ -160,6 +160,10 @@
         *   `DELETE /services/{service_id}`：刪除服務 (待添加管理員權限驗證)。
     *   成功測試了所有服務管理 API 端點 (新增、獲取、更新、刪除)。
 
+    *   在 `sidep_backend/main.py` 的 `service_router` 中新增了 `PATCH /services/{service_id}/status` 端點，用於快速切換服務的上架/下架狀態。
+
+    *   在 `sidep_backend/main.py` 的 `service_router` 中新增了 `POST /services/bulk-action` 端點，用於批次上架、下架或刪除服務。
+
 ### 階段四：預約管理 API 實作
 
 1.  **實作預約管理 API 端點：**
@@ -168,6 +172,7 @@
         *   `GET /bookings/my`：獲取當前用戶的預約紀錄 (待從認證中獲取用戶 ID)。
         *   `GET /bookings/`：獲取所有預約 (待添加管理員權限驗證)。
         *   `PUT /bookings/{booking_id}/status`：更新預約狀態 (待添加管理員權限驗證)。
+        *   `PUT /bookings/{booking_id}`：更新預約的詳細資訊（例如備註）。
         *   `DELETE /bookings/{booking_id}`：刪除預約 (待添加管理員權限驗證)。
     *   成功測試了所有預約管理 API 端點 (創建、獲取、更新狀態、刪除)。
 
@@ -210,6 +215,28 @@
     *   修正了 `main.py` 中 `HTTPBearer` 實例化時不應包含 `tokenUrl` 參數的問題，以確保 Swagger UI 正確顯示 Bearer Token 輸入框。
     *   修正了 `JWTError: Subject must be a string` 的問題，確保 `sub` 聲明為字串。
     *   **成功測試了 JWT 認證與授權功能，確認受保護的端點可以正常訪問。**
+
+### 階段八：使用者個人資料 API 實作
+
+1.  **實作使用者個人資料 API 端點：**
+    *   在 `sidep_backend/main.py` 中添加了 `user_router`，包含了以下端點：
+        *   `GET /users/me`：獲取當前登入使用者的詳細資訊。
+        *   `PUT /users/me`：更新當前登入使用者的個人資料。
+        *   `POST /users/me/change-password`：變更當前登入使用者的密碼。
+    *   成功測試了所有使用者個人資料 API 端點。
+
+### 階段九：營業設定統一管理 API 實作
+
+1.  **實作營業設定統一管理 API 端點：**
+    *   在 `sidep_backend/main.py` 的 `business_settings_router` 中新增了 `PUT /admin/settings/` 端點，用於統一更新營業時間、假日和不可預約日期。
+    *   在 `schemas.py` 中新增了 `BusinessSettingsUpdate` 模型。
+
+### 階段十：可預約時間段管理 API 實作
+
+1.  **實作可預約時間段管理 API 端點：**
+    *   在 `sidep_backend/models.py` 中新增了 `BookableTimeSlot` 模型。
+    *   在 `sidep_backend/schemas.py` 中新增了 `BookableTimeSlotBase`, `BookableTimeSlotCreate`, `BookableTimeSlotResponse` 模型。
+    *   在 `sidep_backend/main.py` 的 `business_settings_router` 中新增了 `POST /admin/settings/time-slots` 和 `DELETE /admin/settings/time-slots/{time_slot_id}` 端點。
 
 **目前狀態：**
 
