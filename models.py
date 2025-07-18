@@ -26,7 +26,8 @@ class Service(Base):
     name = Column(String, unique=True, index=True, nullable=False)
     description = Column(String, nullable=True)
     price = Column(Float, nullable=False)
-    duration = Column(Integer, nullable=False) # 服務所需時間，單位分鐘
+    min_duration = Column(Integer, nullable=False) # 服務所需最短時間，單位分鐘
+    max_duration = Column(Integer, nullable=False) # 服務所需最長時間，單位分鐘
     is_active = Column(Boolean, default=True) # 是否上架
     category = Column(String, nullable=True)
     image_url = Column(String, nullable=True)
@@ -62,6 +63,7 @@ class BusinessHour(Base):
     day_of_week = Column(Integer, nullable=False) # 0=Monday, 6=Sunday
     open_time = Column(Time, nullable=False)
     close_time = Column(Time, nullable=False)
+    is_closed = Column(Boolean, default=False) # 新增欄位，表示當天是否休息
 
     def __repr__(self):
         return f"<BusinessHour(id={self.id}, day_of_week={self.day_of_week}, open_time={self.open_time}, close_time={self.close_time})>"

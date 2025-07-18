@@ -37,7 +37,8 @@ class ServiceBase(BaseModel):
     name: str
     description: Optional[str] = None
     price: float
-    duration: int # 服務所需時間，單位分鐘
+    min_duration: int # 服務所需最短時間，單位分鐘
+    max_duration: int # 服務所需最長時間，單位分鐘
     is_active: Optional[bool] = True
     category: Optional[str] = None
     image_url: Optional[str] = None
@@ -47,6 +48,8 @@ class ServiceCreate(ServiceBase):
 
 class ServiceResponse(ServiceBase):
     id: int
+    minDuration: int = Field(..., alias="min_duration")
+    maxDuration: int = Field(..., alias="max_duration")
 
     class Config:
         from_attributes = True
@@ -70,13 +73,22 @@ class BookingBase(BaseModel):
 class BookingCreate(BookingBase):
     pass
 
-class BookingResponse(BookingBase):
+class BookingResponse(BaseModel):
     id: int
+    user_id: int
+    service_id: int
+    date: date
+    time: str
+    status: str
+    notes: Optional[str] = None # 讓 Pydantic 處理 None
     created_at: datetime
     updated_at: Optional[datetime] = None
+    clientName: str = Field(..., alias="clientName")  # 客戶姓名
+    serviceName: str = Field(..., alias="serviceName")  # 服務項目名稱
 
     class Config:
         from_attributes = True
+        populate_by_name = True # 允許通過別名賦值
 
 class BookingUpdate(BaseModel):
     notes: Optional[str] = None
@@ -87,12 +99,14 @@ class BusinessHourBase(BaseModel):
     day_of_week: int # 0=Monday, 6=Sunday
     open_time: time
     close_time: time
+    is_closed: Optional[bool] = False
 
 class BusinessHourCreate(BusinessHourBase):
     pass
 
 class BusinessHourResponse(BusinessHourBase):
     id: int
+    isClosed: bool = Field(..., alias="is_closed")
 
     class Config:
         from_attributes = True
@@ -123,18 +137,17 @@ class UnavailableDateResponse(UnavailableDateBase):
     class Config:
         from_attributes = True
 
-class BusinessSettingsResponse(BaseModel):
-    business_hours: List[BusinessHourResponse]
-    holidays: List[HolidayResponse]
-    unavailable_dates: List[UnavailableDateResponse]
+class UnavailableDateResponse(UnavailableDateBase):
+    id: int
 
     class Config:
         from_attributes = True
 
-class BusinessSettingsUpdate(BaseModel):
-    business_hours: Optional[List[BusinessHourCreate]] = None
-    holidays: Optional[List[HolidayCreate]] = None
-    unavailable_dates: Optional[List[UnavailableDateCreate]] = None
+class UnavailableDateResponse(UnavailableDateBase):
+    id: int
+
+    class Config:
+        from_attributes = True
 
 class BookableTimeSlotBase(BaseModel):
     start_time: time
@@ -145,6 +158,21 @@ class BookableTimeSlotCreate(BookableTimeSlotBase):
 
 class BookableTimeSlotResponse(BookableTimeSlotBase):
     id: int
+
+    class Config:
+        from_attributes = True
+
+class BusinessSettingsUpdate(BaseModel):
+    business_hours: Optional[List[BusinessHourCreate]] = None
+    holidays: Optional[List[HolidayCreate]] = None
+    unavailable_dates: Optional[List[UnavailableDateCreate]] = None
+    bookable_time_slots: Optional[List[BookableTimeSlotCreate]] = None
+
+class BusinessSettingsResponse(BaseModel):
+    business_hours: List[BusinessHourResponse]
+    holidays: List[HolidayResponse]
+    unavailable_dates: List[UnavailableDateResponse]
+    bookable_time_slots: List[BookableTimeSlotResponse] # 新增可預約時間段落
 
     class Config:
         from_attributes = True
