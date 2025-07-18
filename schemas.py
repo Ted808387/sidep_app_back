@@ -176,3 +176,16 @@ class BusinessSettingsResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class BlacklistedTokenBase(BaseModel):
+    token: str
+
+class BlacklistedTokenCreate(BlacklistedTokenBase):
+    pass
+
+class BlacklistedTokenResponse(BlacklistedTokenBase):
+    id: int
+    blacklisted_on: datetime
+
+    class Config:
+        from_attributes = True

@@ -76,15 +76,18 @@ def get_current_user(credentials: HTTPBearer = Depends(bearer_scheme), db: Sessi
     )
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id: str = payload.get("sub") # 這裡也需要是字串
-        print(f"Payload sub: {user_id}, type: {type(user_id)}") # 新增偵錯輸出
+        user_id: str = payload.get("sub")
         if user_id is None:
             raise credentials_exception
-    except JWTError as e:
-        print(f"JWTError occurred: {e}")
+    except JWTError:
         raise credentials_exception
-    user = db.query(models.User).filter(models.User.id == int(user_id)).first() # 轉換回整數
-    print(f"User retrieved from DB in get_current_user: {user}")
+
+    # 檢查 token 是否在黑名單中
+    blacklisted_token = db.query(models.BlacklistedToken).filter(models.BlacklistedToken.token == token).first()
+    if blacklisted_token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has been blacklisted")
+
+    user = db.query(models.User).filter(models.User.id == int(user_id)).first()
     if user is None:
         raise credentials_exception
     return user
@@ -130,6 +133,14 @@ async def login_for_access_token(user_data: schemas.UserLogin, db: Session = Dep
         data={"sub": str(db_user.id)}, expires_delta=access_token_expires # 暫時移除 role
     )
     return {"access_token": access_token, "token_type": "bearer", "user_id": db_user.id, "user_role": db_user.role}
+
+@auth_router.post("/logout", status_code=status.HTTP_200_OK)
+async def logout_user(credentials: HTTPBearer = Depends(bearer_scheme), db: Session = Depends(get_db)):
+    token = credentials.credentials
+    blacklisted_token = models.BlacklistedToken(token=token)
+    db.add(blacklisted_token)
+    db.commit()
+    return {"message": "Successfully logged out"}
 
 app.include_router(auth_router)
 

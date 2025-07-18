@@ -252,3 +252,79 @@
 *   **完整的 JWT 認證與授權已實作並測試成功。**
 
 **下一步：** 替換前端的 `dataService`，使其呼叫實際的後端 API。
+
+### **後端 API 開發與測試狀態**
+
+**目標：** 實作所有必要的 API 端點，並透過與前端的整合測試來驗證其功能。
+
+**測試原則：**
+*   每個 API 端點在開發完成後，都應先進行單元測試（例如使用 Postman 或 `curl`）。
+*   與前端整合後，進行完整的端到端測試。
+*   測試完成後，在此處更新狀態。
+
+---
+
+#### **階段一：認證與使用者資料**
+
+1.  **用戶註冊 (`/auth/register`)**
+    *   **開發狀態：** 已完成。
+    *   **整合測試狀態：** **已完成**。✅
+
+2.  **用戶登入 (`/auth/login`)**
+    *   **開發狀態：** 已完成。
+    *   **整合測試狀態：** **已完成**。✅
+
+3.  **使用者個人資料 (`/users/me`)**
+    *   **API 端點：** `GET /users/me`, `PUT /users/me`, `POST /users/me/change-password`
+    *   **開發狀態：** 已完成。
+    *   **整合測試狀態：** 待測試。
+
+---
+
+#### **階段二：服務管理**
+
+1.  **服務管理 (`/services`)**
+    *   **API 端點：** `GET, POST /services/`, `PUT, DELETE /services/{service_id}`, `PATCH /services/{service_id}/status`, `POST /services/bulk-action`
+    *   **開發狀態：** 已完成。
+    *   **整合測試狀態：** **已完成** (獲取、新增、編輯服務)。其餘待測試。
+
+---
+
+#### **階段三：預約管理**
+
+1.  **預約管理 (`/bookings`)**
+    *   **API 端點：** `GET /bookings/`, `POST /bookings/`, `GET /bookings/my`, `PUT /bookings/{booking_id}/status`, `DELETE /bookings/{booking_id}`
+    *   **開發狀態：** 已完成。
+    *   **整合測試狀態：** 待測試。
+
+---
+
+#### **階段四：客戶管理**
+
+1.  **客戶管理 (`/admin/clients`)**
+    *   **API 端點：** `GET /admin/clients/`, `GET, PUT /admin/clients/{client_id}`
+    *   **開發狀態：** 已完成。
+    *   **整合測試狀態：** 待測試。
+
+---
+
+#### **階段五：營業設定**
+
+1.  **營業設定 (`/admin/settings`)**
+    *   **API 端點：** `GET, PUT /admin/settings/`, `POST, DELETE /admin/settings/holidays`, `POST, DELETE /admin/settings/unavailable-dates`, `POST, DELETE /admin/settings/time-slots`
+    *   **開發狀態：** 已完成。
+    *   **整合測試狀態：** **已完成** (設定營業時間)。其餘待測試。
+
+### **登出功能完善**
+
+**目標：** 確保登出功能不僅清除前端狀態，還能通知後端使 JWT Token 失效。
+
+**進度：**
+
+1.  **後端 `sidep_backend/models.py`：** 已添加 `BlacklistedToken` 模型。✅
+2.  **後端 `sidep_backend/schemas.py`：** 已添加 `BlacklistedToken` 的 Pydantic Schema。✅
+3.  **後端 `sidep_backend/main.py`：**
+    *   已新增 `/auth/logout` 端點，將 Token 加入黑名單。✅
+    *   已修改 `get_current_user` 函數，檢查 Token 是否在黑名單中。✅
+
+**下一步：** 測試登出功能，確認 Token 是否正確失效。

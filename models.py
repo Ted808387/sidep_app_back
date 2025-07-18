@@ -97,3 +97,13 @@ class BookableTimeSlot(Base):
 
     def __repr__(self):
         return f"<BookableTimeSlot(id={self.id}, start_time={self.start_time}, end_time={self.end_time})>"
+
+class BlacklistedToken(Base):
+    __tablename__ = "blacklisted_tokens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    token = Column(String, unique=True, nullable=False)
+    blacklisted_on = Column(DateTime(timezone=True), server_default=func.now())
+
+    def __repr__(self):
+        return f"<BlacklistedToken(id={self.id}, token={self.token[:10]}..., blacklisted_on={self.blacklisted_on})>"
