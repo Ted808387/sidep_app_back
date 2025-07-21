@@ -340,5 +340,7 @@
 3.  **配置 Alembic (`alembic.ini`, `alembic/env.py`)：** 已完成。✅
 4.  **生成第一個遷移腳本：** 已完成，用於添加 `User` 模型中的 `avatar_url`、`email_notifications_enabled`、`sms_notifications_enabled` 欄位，以及 `BlacklistedToken` 模型。✅
 5.  **應用遷移腳本：** 已完成。✅
+6.  **生成新的遷移腳本：** 已完成，用於添加 `User` 模型中的通知設定欄位。✅
+7.  **應用新的遷移腳本：** 已完成。✅
 
 **下一步：** 重新啟動後端應用程式，並測試所有功能，特別是涉及 `User` 模型新欄位的操作。
