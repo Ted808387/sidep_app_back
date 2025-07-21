@@ -7,6 +7,7 @@ class UserBase(BaseModel):
     email: EmailStr
     name: str
     phone_number: Optional[str] = None
+    avatar_url: Optional[str] = None # 新增 avatar_url
 
 class UserCreate(UserBase):
     password: str = Field(..., min_length=6) # 密碼至少6位
@@ -16,6 +17,7 @@ class UserResponse(UserBase):
     id: int
     role: str
     registration_date: datetime
+    avatar_url: Optional[str] = None # 新增 avatar_url
 
     class Config:
         from_attributes = True # 允許從 ORM 對象創建 Pydantic 模型
@@ -27,6 +29,7 @@ class UserLogin(BaseModel):
 class UserUpdate(BaseModel):
     name: Optional[str] = None
     phone_number: Optional[str] = None
+    avatar_url: Optional[str] = None # 允許更新 avatar_url
 
 class PasswordUpdate(BaseModel):
     current_password: str

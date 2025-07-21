@@ -328,3 +328,17 @@
     *   已修改 `get_current_user` 函數，檢查 Token 是否在黑名單中。✅
 
 **下一步：** 測試登出功能，確認 Token 是否正確失效。
+
+### **Alembic 資料庫遷移工具整合**
+
+**目標：** 引入 Alembic 以便安全、高效地管理資料庫結構變更，避免手動刪除資料庫。
+
+**進度：**
+
+1.  **安裝 Alembic：** 已完成。✅
+2.  **初始化 Alembic 環境：** 已完成。✅
+3.  **配置 Alembic (`alembic.ini`, `alembic/env.py`)：** 已完成。✅
+4.  **生成第一個遷移腳本：** 已完成，用於添加 `User` 模型中的 `avatar_url`、`email_notifications_enabled`、`sms_notifications_enabled` 欄位，以及 `BlacklistedToken` 模型。✅
+5.  **應用遷移腳本：** 已完成。✅
+
+**下一步：** 重新啟動後端應用程式，並測試所有功能，特別是涉及 `User` 模型新欄位的操作。

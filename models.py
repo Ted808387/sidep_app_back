@@ -11,7 +11,10 @@ class User(Base):
     password = Column(String, nullable=False) # 儲存雜湊後的密碼
     name = Column(String, nullable=False)
     phone_number = Column(String, nullable=True)
+    avatar_url = Column(String, nullable=True) # 新增頭像 URL 欄位
     role = Column(String, default="customer") # customer 或 admin
+    email_notifications_enabled = Column(Boolean, default=True)
+    sms_notifications_enabled = Column(Boolean, default=False)
     registration_date = Column(DateTime(timezone=True), server_default=func.now())
 
     bookings = relationship("Booking", back_populates="user")
