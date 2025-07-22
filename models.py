@@ -2,6 +2,7 @@ from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, Foreig
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base # 從 database.py 導入 Base
+from datetime import datetime
 
 class User(Base):
     __tablename__ = "users"
@@ -41,17 +42,18 @@ class Service(Base):
         return f"<Service(id={self.id}, name={self.name}, price={self.price})>"
 
 class Booking(Base):
-    __tablename__ = "bookings"
+    __tablename__ = 'bookings'
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    service_id = Column(Integer, ForeignKey("services.id"), nullable=False)
-    date = Column(DateTime, nullable=False)
-    time = Column(String, nullable=False) # 儲存時間字串，例如 "10:00"
-    status = Column(String, default="pending") # pending, confirmed, cancelled, completed
-    notes = Column(String, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    booking_reference_id = Column(String, unique=True, index=True, nullable=True) # 新增預約編號欄位
+    user_id = Column(Integer, ForeignKey('users.id'))
+    service_id = Column(Integer, ForeignKey('services.id'))
+    date = Column(DateTime)
+    time = Column(String)
+    status = Column(String, default='pending')
+    notes = Column(String, nullable=True, default='')
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     user = relationship("User", back_populates="bookings")
     service = relationship("Service", back_populates="bookings")

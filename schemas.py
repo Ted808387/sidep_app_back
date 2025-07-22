@@ -82,20 +82,21 @@ class BookingCreate(BookingBase):
 
 class BookingResponse(BaseModel):
     id: int
+    booking_reference_id: Optional[str] = None # 新增預約編號
     user_id: int
     service_id: int
     date: date
     time: str
     status: str
-    notes: Optional[str] = None # 讓 Pydantic 處理 None
+    notes: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
-    clientName: str = Field(..., alias="clientName")  # 客戶姓名
-    serviceName: str = Field(..., alias="serviceName")  # 服務項目名稱
+    clientName: Optional[str] = None
+    serviceName: Optional[str] = None
 
     class Config:
         from_attributes = True
-        populate_by_name = True # 允許通過別名賦值
+        populate_by_name = True
 
 class BookingUpdate(BaseModel):
     notes: Optional[str] = None

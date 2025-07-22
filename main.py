@@ -1,3 +1,5 @@
+import random
+import string
 from fastapi import FastAPI, Depends, HTTPException, status, APIRouter
 from sqlalchemy.orm import Session, joinedload
 from passlib.context import CryptContext
@@ -239,25 +241,46 @@ booking_router = APIRouter(prefix="/bookings", tags=["Bookings"])
 
 @booking_router.post("/", response_model=schemas.BookingResponse, status_code=status.HTTP_201_CREATED)
 async def create_booking(booking: schemas.BookingCreate, db: Session = Depends(get_db), current_user: schemas.UserResponse = Depends(get_current_user)):
-    # 確保 user_id 與當前登入用戶匹配
     if booking.user_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot create booking for another user")
-    
-    # 檢查 service_id 是否存在
+
     service = db.query(models.Service).filter(models.Service.id == booking.service_id).first()
     if service is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
 
-    # TODO: 檢查預約時間是否可用 (例如：營業時間內，沒有衝突)
     db_booking = models.Booking(**booking.model_dump())
     if db_booking.notes is None:
         db_booking.notes = ""
-    if db_booking.notes is None:
-        db_booking.notes = ""
     db.add(db_booking)
+    db.flush() # 確保 db_booking.id 被賦值
+
+    # 生成預約編號
+    random_string = ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
+    db_booking.booking_reference_id = f"NA{random_string}{db_booking.id}"
+
     db.commit()
     db.refresh(db_booking)
-    return db_booking
+
+    # 查詢完整的預約資訊以回傳
+    booking_response = db.query(models.Booking).options(
+        joinedload(models.Booking.user),
+        joinedload(models.Booking.service)
+    ).filter(models.Booking.id == db_booking.id).first()
+
+    return schemas.BookingResponse(
+        id=booking_response.id,
+        booking_reference_id=booking_response.booking_reference_id, # 新增回傳
+        user_id=booking_response.user_id,
+        service_id=booking_response.service_id,
+        date=booking_response.date,
+        time=booking_response.time,
+        status=booking_response.status,
+        notes=booking_response.notes,
+        created_at=booking_response.created_at,
+        updated_at=booking_response.updated_at,
+        clientName=booking_response.user.name,
+        serviceName=booking_response.service.name
+    )
 
 @booking_router.get("/my", response_model=List[schemas.BookingResponse])
 async def get_my_bookings(db: Session = Depends(get_db), current_user: schemas.UserResponse = Depends(get_current_user)):
@@ -398,52 +421,45 @@ business_settings_router = APIRouter(prefix="/admin/settings", tags=["Admin - Bu
 
 @business_settings_router.get("/", response_model=schemas.BusinessSettingsResponse)
 async def get_business_settings(db: Session = Depends(get_db), current_user: schemas.UserResponse = Depends(get_current_admin_user)):
-    business_hours = db.query(models.BusinessHour).all()
+    business_hours_from_db = db.query(models.BusinessHour).order_by(models.BusinessHour.id).all()
     holidays = db.query(models.Holiday).all()
     unavailable_dates = db.query(models.UnavailableDate).all()
     bookable_time_slots = db.query(models.BookableTimeSlot).all()
 
-    # 如果 business_hours 為空，則插入預設值
-    if not business_hours:
-        default_hours_data = [
-            {"day_of_week": 1, "open_time": time(10, 0), "close_time": time(19, 0)}, # 星期一
-            {"day_of_week": 2, "open_time": time(10, 0), "close_time": time(19, 0)}, # 星期二
-            {"day_of_week": 3, "open_time": time(10, 0), "close_time": time(19, 0)}, # 星期三
-            {"day_of_week": 4, "open_time": time(10, 0), "close_time": time(19, 0)}, # 星期四
-            {"day_of_week": 5, "open_time": time(10, 0), "close_time": time(19, 0)}, # 星期五
-            {"day_of_week": 6, "open_time": time(10, 0), "close_time": time(19, 0)}, # 星期六
-            {"day_of_week": 7, "open_time": time(10, 0), "close_time": time(19, 0), "is_closed": True}, # 星期日
+    # 如果營業時間是空的，就創建預設值 (週一到週日)
+    if not business_hours_from_db:
+        default_hours = [
+            # 週一到週六 10:00 - 19:00
+            models.BusinessHour(day_of_week=i, open_time=time(10, 0), close_time=time(19, 0), is_closed=False) for i in range(1, 7)
         ]
-        for hour_data in default_hours_data:
-            # 檢查是否為星期日，如果是，則設置 is_closed
-            if hour_data["day_of_week"] == 7:
-                db_hour = models.BusinessHour(day_of_week=hour_data["day_of_week"], open_time=hour_data["open_time"], close_time=hour_data["close_time"], is_closed=True)
-            else:
-                db_hour = models.BusinessHour(day_of_week=hour_data["day_of_week"], open_time=hour_data["open_time"], close_time=hour_data["close_time"], is_closed=False)
-            db.add(db_hour)
+        # 週日公休
+        default_hours.append(models.BusinessHour(day_of_week=7, open_time=time(10, 0), close_time=time(19, 0), is_closed=True))
+        
+        db.add_all(default_hours)
         db.commit()
-        db.refresh(db_hour) # 刷新以獲取 ID
-        business_hours = db.query(models.BusinessHour).all() # 重新查詢以獲取完整的預設數據
+        # 重新查詢以獲取新創建的數據
+        business_hours_from_db = db.query(models.BusinessHour).order_by(models.BusinessHour.day_of_week).all()
 
-    # 如果 bookable_time_slots 為空，則插入預設值
-    if not bookable_time_slots:
-        default_time_slots_data = [
-            {"start_time": time(9, 0), "end_time": time(12, 0)},
-            {"start_time": time(13, 0), "end_time": time(17, 0)},
-        ]
-        for slot_data in default_time_slots_data:
-            db_slot = models.BookableTimeSlot(**slot_data)
-            db.add(db_slot)
-        db.commit()
-        db.refresh(db_slot) # 刷新以獲取 ID
-        bookable_time_slots = db.query(models.BookableTimeSlot).all() # 重新查詢以獲取完整的預設數據
+    # 標準化輸出，確保 day_of_week 永遠是 1-7
+    standardized_hours = []
+    if len(business_hours_from_db) == 7:
+        for i, hour_model in enumerate(business_hours_from_db):
+            # ISO 8601 標準: 星期一=1, 星期日=7
+            day_of_week_standard = i + 1
+            standardized_hours.append({
+                "id": hour_model.id,
+                "day_of_week": day_of_week_standard,
+                "open_time": hour_model.open_time.strftime('%H:%M:%S') if hour_model.open_time else None,
+                "close_time": hour_model.close_time.strftime('%H:%M:%S') if hour_model.close_time else None,
+                "is_closed": hour_model.is_closed
+            })
 
-    return schemas.BusinessSettingsResponse(
-        business_hours=business_hours,
-        holidays=holidays,
-        unavailable_dates=unavailable_dates,
-        bookable_time_slots=bookable_time_slots
-    )
+    return {
+        "business_hours": standardized_hours,
+        "holidays": holidays,
+        "unavailable_dates": unavailable_dates,
+        "bookable_time_slots": bookable_time_slots,
+    }
 
 @business_settings_router.put("/", response_model=schemas.BusinessSettingsResponse)
 async def update_business_settings(settings: schemas.BusinessSettingsUpdate, db: Session = Depends(get_db), current_user: schemas.UserResponse = Depends(get_current_admin_user)):
