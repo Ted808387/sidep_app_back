@@ -39,6 +39,54 @@
     *   在 `sidep_backend` 虛擬環境中安裝了 `psycopg2-binary` (PostgreSQL 驅動) 和 `SQLAlchemy` (ORM)。
     *   指令：`cd /Users/rd02wcs/Desktop/created_app/sidep_backend && source venv/bin/activate && pip install psycopg2-binary sqlalchemy`
 
+## 第一階段：核心後端改造 - 建立資料所有權 (已完成)
+
+### 1. 修改資料庫模型 (`sidep_backend/models.py`)
+*   為 `Service`, `Booking`, `BusinessHour`, `Holiday`, `UnavailableDate`, `BookableTimeSlot` 模型增加了 `owner_id` 欄位，並設為指向 `users.id` 的外鍵與索引。
+*   更新了 `sqlalchemy.orm` 的 import 語句，加入了 `Mapped` 和 `mapped_column`。
+
+### 2. 執行資料庫遷移 (Alembic)
+*   初始化了 Alembic 環境，並生成了初始遷移檔案。
+*   執行了 `alembic revision --autogenerate -m "Add owner_id for multi-tenancy support"`，成功生成了包含 `owner_id` 變更的遷移檔案。
+*   執行了 `alembic upgrade head`，成功應用了遷移，將 `owner_id` 欄位添加到資料庫中。
+
+### 3. 調整 API 邏輯 (`sidep_backend/main.py`)
+*   修改了 `get_current_admin_user` 函數，使其返回 `models.User`。
+*   **Service 相關 API：**
+    *   `POST /services/`: 在創建服務時，自動將 `current_user.id` 寫入 `owner_id`。
+    *   `GET /services/`: 查詢服務列表時，添加 `owner_id = current_user.id` 過濾條件。
+    *   `GET /services/{service_id}`: 查詢單個服務時，添加 `owner_id = current_user.id` 過濾條件。
+    *   `PUT /services/{service_id}`: 更新服務時，驗證 `owner_id` 與 `current_user.id` 是否一致。
+    *   `PATCH /services/{service_id}/status`: 更新服務狀態時，驗證 `owner_id` 與 `current_user.id` 是否一致。
+    *   `DELETE /services/{service_id}`: 刪除服務時，驗證 `owner_id` 與 `current_user.id` 是否一致。
+    *   `POST /services/bulk-action`: 批量操作服務時，添加 `owner_id = current_user.id` 過濾條件。
+*   **Booking 相關 API：**
+    *   `POST /bookings/`: 在創建預約時，自動將 `current_user.id` 寫入 `owner_id`，並驗證服務的 `owner_id`。
+    *   `GET /bookings/`: 查詢預約列表時，添加 `owner_id = current_user.id` 過濾條件。
+    *   `PUT /bookings/{booking_id}/status`: 更新預約狀態時，驗證 `owner_id` 與 `current_user.id` 是否一致。
+    *   `PUT /bookings/{booking_id}`: 更新預約時，驗證 `owner_id` 與 `current_user.id` 是否一致。
+    *   `DELETE /bookings/{booking_id}`: 刪除預約時，驗證 `owner_id` 與 `current_user.id` 是否一致。
+*   **Business Settings 相關 API：**
+    *   `GET /admin/settings/`: 查詢營業設定時，添加 `owner_id` 過濾條件。
+    *   `PUT /admin/settings/`: 更新營業設定時，在刪除舊資料和新增新資料時都添加 `owner_id` 處理。
+    *   `PUT /admin/settings/business-hours`: 更新營業時間時，添加 `owner_id` 處理。
+    *   `POST /admin/settings/holidays`: 添加假日時，添加 `owner_id` 處理。
+    *   `DELETE /admin/settings/holidays/{holiday_date}`: 刪除假日時，驗證 `owner_id` 與 `current_user.id` 是否一致。
+    *   `POST /admin/settings/unavailable-dates`: 添加不可預約日期時，添加 `owner_id` 處理。
+    *   `DELETE /admin/settings/unavailable-dates/{unavailable_date}`: 刪除不可預約日期時，驗證 `owner_id` 與 `current_user.id` 是否一致。
+    *   `POST /admin/settings/time-slots`: 添加可預約時間段時，添加 `owner_id` 處理。
+    *   `DELETE /admin/settings/time-slots/{time_slot_id}`: 刪除可預約時間段時，驗證 `owner_id` 與 `current_user.id` 是否一致。
+
+## 第二階段：前後端串接 - 實現專屬預約流程 (後端部分已完成)
+
+### 1. 後端 - 建立管理員的公開識別碼與 API (`sidep_backend`)
+*   **修改 `models.py`:** 在 `User` 模型中新增 `public_slug` 欄位。
+*   **執行 Alembic 遷移:** 成功應用了 `public_slug` 欄位到資料庫。
+*   **修改 `main.py` (`/auth/register`):** 在管理員註冊的邏輯中，自動生成一個唯一的 `public_slug` 並存入資料庫。
+*   **新增 `main.py` (公開 API):** 建立了一個無需認證的 API 端點 `GET /public/profile/{slug}`，用於根據 slug 回傳店家的公開資訊（服務、設定等）。
+*   **修改 `schemas.py`:** 為 `BookingCreate` 添加 `public_slug` 欄位，並為 `UserResponse` 添加 `public_slug` 欄位，同時定義了 `UserPublicProfileResponse`。
+*   **修改 `main.py` (`POST /bookings`):** 讓此 API 能接收 `public_slug` 參數，以便在建立預約時，能根據 slug 查找到正確的 `owner_id` 並寫入。
+
 ## 目前狀態
 
 *   後端專案 `sidep_backend` 已建立，並配置了 Python 虛擬環境。
@@ -46,5 +94,7 @@
 *   `main.py` 檔案已創建，包含一個基本的 FastAPI 應用。
 *   PostgreSQL 已安裝並運行，`sidep_db` 資料庫和 `sidep_user` 已創建。
 *   `psycopg2-binary` 和 `SQLAlchemy` 已安裝。
+*   **第一階段「核心後端改造 - 建立資料所有權」已全部完成。**
+*   **第二階段「前後端串接 - 實現專屬預約流程」的後端部分已全部完成。**
 
-**下一步：** 定義資料庫模型 (Models).
+**下一步：** 進入第二階段「前後端串接 - 實現專屬預約流程」的前端部分。

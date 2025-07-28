@@ -1,5 +1,6 @@
 import random
 import string
+import uuid
 from fastapi import FastAPI, Depends, HTTPException, status, APIRouter
 from sqlalchemy.orm import Session, joinedload
 from passlib.context import CryptContext
@@ -115,7 +116,7 @@ async def get_optional_current_user(credentials: Optional[HTTPAuthorizationCrede
     user = db.query(models.User).filter(models.User.id == int(user_id)).first()
     return user
 
-def get_current_admin_user(current_user: schemas.UserResponse = Depends(get_current_user)):
+def get_current_admin_user(current_user: models.User = Depends(get_current_user)):
     if current_user.role != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
     return current_user
@@ -136,7 +137,18 @@ async def register_user(user: schemas.UserCreate, db: Session = Depends(get_db))
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
     
     hashed_password = get_password_hash(user.password)
-    db_user = models.User(email=user.email, name=user.name, phone_number=user.phone_number, role=user.role, password=hashed_password)
+    
+    public_slug = None
+    if user.role == "admin":
+        # 生成唯一的 public_slug
+        while True:
+            new_slug = str(uuid.uuid4())[:8] # 使用 UUID 的前8個字符作為 slug
+            existing_slug = db.query(models.User).filter(models.User.public_slug == new_slug).first()
+            if not existing_slug:
+                public_slug = new_slug
+                break
+
+    db_user = models.User(email=user.email, name=user.name, phone_number=user.phone_number, role=user.role, password=hashed_password, public_slug=public_slug)
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
@@ -171,20 +183,21 @@ app.include_router(auth_router)
 service_router = APIRouter(prefix="/services", tags=["Services"])
 
 @service_router.get("/", response_model=List[schemas.ServiceResponse])
-async def get_all_services(db: Session = Depends(get_db)):
-    services = db.query(models.Service).all()
+async def get_all_services(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_admin_user)):
+    services = db.query(models.Service).filter(models.Service.owner_id == current_user.id).all()
     return services
 
 @service_router.get("/{service_id}", response_model=schemas.ServiceResponse)
-async def get_service(service_id: int, db: Session = Depends(get_db)):
-    service = db.query(models.Service).filter(models.Service.id == service_id).first()
+async def get_service(service_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_admin_user)):
+    service = db.query(models.Service).filter(models.Service.id == service_id, models.Service.owner_id == current_user.id).first()
     if service is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
     return service
 
 @service_router.post("/", response_model=schemas.ServiceResponse, status_code=status.HTTP_201_CREATED)
-async def create_service(service: schemas.ServiceCreate, db: Session = Depends(get_db), current_user: schemas.UserResponse = Depends(get_current_admin_user)):
+async def create_service(service: schemas.ServiceCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_admin_user)):
     db_service = models.Service(
+        owner_id=current_user.id,
         name=service.name,
         description=service.description,
         price=service.price,
@@ -200,8 +213,8 @@ async def create_service(service: schemas.ServiceCreate, db: Session = Depends(g
     return db_service
 
 @service_router.put("/{service_id}", response_model=schemas.ServiceResponse)
-async def update_service(service_id: int, service: schemas.ServiceCreate, db: Session = Depends(get_db), current_user: schemas.UserResponse = Depends(get_current_admin_user)):
-    db_service = db.query(models.Service).filter(models.Service.id == service_id).first()
+async def update_service(service_id: int, service: schemas.ServiceCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_admin_user)):
+    db_service = db.query(models.Service).filter(models.Service.id == service_id, models.Service.owner_id == current_user.id).first()
     if db_service is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
     
@@ -214,8 +227,8 @@ async def update_service(service_id: int, service: schemas.ServiceCreate, db: Se
     return db_service
 
 @service_router.patch("/{service_id}/status", response_model=schemas.ServiceResponse)
-async def update_service_status(service_id: int, status_update: schemas.ServiceStatusUpdate, db: Session = Depends(get_db), current_user: schemas.UserResponse = Depends(get_current_admin_user)):
-    db_service = db.query(models.Service).filter(models.Service.id == service_id).first()
+async def update_service_status(service_id: int, status_update: schemas.ServiceStatusUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_admin_user)):
+    db_service = db.query(models.Service).filter(models.Service.id == service_id, models.Service.owner_id == current_user.id).first()
     if db_service is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
     
@@ -225,8 +238,8 @@ async def update_service_status(service_id: int, status_update: schemas.ServiceS
     return db_service
 
 @service_router.delete("/{service_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_service(service_id: int, db: Session = Depends(get_db), current_user: schemas.UserResponse = Depends(get_current_admin_user)):
-    db_service = db.query(models.Service).filter(models.Service.id == service_id).first()
+async def delete_service(service_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_admin_user)):
+    db_service = db.query(models.Service).filter(models.Service.id == service_id, models.Service.owner_id == current_user.id).first()
     if db_service is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
     
@@ -239,7 +252,7 @@ async def bulk_service_action(request: schemas.BulkServiceActionRequest, db: Ses
     if request.action not in ["activate", "deactivate", "delete"]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid action specified")
 
-    services_to_update = db.query(models.Service).filter(models.Service.id.in_(request.service_ids)).all()
+    services_to_update = db.query(models.Service).filter(models.Service.id.in_(request.service_ids), models.Service.owner_id == current_user.id).all()
 
     if not services_to_update:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No services found for the given IDs")
@@ -264,8 +277,19 @@ booking_router = APIRouter(prefix="/bookings", tags=["Bookings"])
 async def create_booking(
     booking: schemas.BookingCreate,
     db: Session = Depends(get_db),
-    current_user: Optional[schemas.UserResponse] = Depends(get_optional_current_user)
+    current_user: Optional[models.User] = Depends(get_optional_current_user)
 ):
+    owner_id = None
+    if booking.public_slug:
+        owner_user = db.query(models.User).filter(models.User.public_slug == booking.public_slug, models.User.role == "admin").first()
+        if not owner_user:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Public profile not found for the given slug")
+        owner_id = owner_user.id
+    elif current_user:
+        owner_id = current_user.id
+    else:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required or public slug missing")
+
     # 如果提供了 user_id，則檢查是否與當前登入用戶匹配
     # 管理員可以為任何用戶創建預約，所以如果當前用戶是管理員，則跳過此檢查
     if booking.user_id is not None:
@@ -276,11 +300,12 @@ async def create_booking(
         if not booking.customer_name or not booking.customer_email or not booking.customer_phone:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Customer name, email, and phone are required for anonymous bookings")
 
-    service = db.query(models.Service).filter(models.Service.id == booking.service_id).first()
+    service = db.query(models.Service).filter(models.Service.id == booking.service_id, models.Service.owner_id == owner_id).first()
     if service is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found or not owned by the specified owner")
 
     db_booking = models.Booking(
+        owner_id=owner_id,
         user_id=booking.user_id,
         service_id=booking.service_id,
         date=booking.date,
@@ -332,12 +357,12 @@ async def create_booking(
     )
 
 @booking_router.get("/my", response_model=List[schemas.BookingResponse])
-async def get_my_bookings(db: Session = Depends(get_db), current_user: schemas.UserResponse = Depends(get_current_user)):
+async def get_my_bookings(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     bookings_with_details = db.query(
         models.Booking,
         models.User.name.label("client_name"),
         models.Service.name.label("service_name")
-    ).join(models.User).join(models.Service).filter(models.Booking.user_id == current_user.id).all()
+    ).join(models.Booking.user).join(models.Booking.service).filter(models.Booking.user_id == current_user.id).all()
 
     # 將查詢結果轉換為 BookingResponse 列表
     response_bookings = []
@@ -359,11 +384,11 @@ async def get_my_bookings(db: Session = Depends(get_db), current_user: schemas.U
     return response_bookings
 
 @booking_router.get("/", response_model=List[schemas.BookingResponse])
-async def get_all_bookings(db: Session = Depends(get_db)):
+async def get_all_bookings(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_admin_user)):
     bookings_with_details = db.query(
         models.Booking,
         models.Service.name.label("service_name")
-    ).join(models.Service).all()
+    ).join(models.Service).filter(models.Booking.owner_id == current_user.id).all()
 
     response_bookings = []
     for booking, service_name in bookings_with_details:
@@ -393,8 +418,8 @@ async def get_all_bookings(db: Session = Depends(get_db)):
     return response_bookings
 
 @booking_router.put("/{booking_id}/status", response_model=schemas.BookingResponse)
-async def update_booking_status(booking_id: int, status: str, db: Session = Depends(get_db), current_user: schemas.UserResponse = Depends(get_current_admin_user)):
-    db_booking = db.query(models.Booking).filter(models.Booking.id == booking_id).first()
+async def update_booking_status(booking_id: int, status: str, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_admin_user)):
+    db_booking = db.query(models.Booking).filter(models.Booking.id == booking_id, models.Booking.owner_id == current_user.id).first()
     if db_booking is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
     
@@ -404,8 +429,8 @@ async def update_booking_status(booking_id: int, status: str, db: Session = Depe
     return db_booking
 
 @booking_router.put("/{booking_id}", response_model=schemas.BookingResponse)
-async def update_booking(booking_id: int, booking_update: schemas.BookingUpdate, db: Session = Depends(get_db), current_user: schemas.UserResponse = Depends(get_current_user)):
-    db_booking = db.query(models.Booking).filter(models.Booking.id == booking_id).first()
+async def update_booking(booking_id: int, booking_update: schemas.BookingUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    db_booking = db.query(models.Booking).filter(models.Booking.id == booking_id, models.Booking.owner_id == current_user.id).first()
     if db_booking is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
     
@@ -426,8 +451,8 @@ async def update_booking(booking_id: int, booking_update: schemas.BookingUpdate,
     return db_booking
 
 @booking_router.delete("/{booking_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_booking(booking_id: int, db: Session = Depends(get_db), current_user: schemas.UserResponse = Depends(get_current_admin_user)):
-    db_booking = db.query(models.Booking).filter(models.Booking.id == booking_id).first()
+async def delete_booking(booking_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_admin_user)):
+    db_booking = db.query(models.Booking).filter(models.Booking.id == booking_id, models.Booking.owner_id == current_user.id).first()
     if db_booking is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Booking not found")
     
@@ -476,20 +501,20 @@ app.include_router(client_router)
 business_settings_router = APIRouter(prefix="/admin/settings", tags=["Admin - Business Settings"])
 
 @business_settings_router.get("/", response_model=schemas.BusinessSettingsResponse)
-async def get_business_settings(db: Session = Depends(get_db)):
-    business_hours_from_db = db.query(models.BusinessHour).order_by(models.BusinessHour.id).all()
-    holidays = db.query(models.Holiday).all()
-    unavailable_dates = db.query(models.UnavailableDate).all()
-    bookable_time_slots = db.query(models.BookableTimeSlot).all()
+async def get_business_settings(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_admin_user)):
+    business_hours_from_db = db.query(models.BusinessHour).filter(models.BusinessHour.owner_id == current_user.id).order_by(models.BusinessHour.id).all()
+    holidays = db.query(models.Holiday).filter(models.Holiday.owner_id == current_user.id).all()
+    unavailable_dates = db.query(models.UnavailableDate).filter(models.UnavailableDate.owner_id == current_user.id).all()
+    bookable_time_slots = db.query(models.BookableTimeSlot).filter(models.BookableTimeSlot.owner_id == current_user.id).all()
 
     # 如果營業時間是空的，就創建預設值 (週一到週日)
     if not business_hours_from_db:
         default_hours = [
             # 週一到週六 10:00 - 19:00
-            models.BusinessHour(day_of_week=i, open_time=time(10, 0), close_time=time(19, 0), is_closed=False) for i in range(1, 7)
+            models.BusinessHour(owner_id=current_user.id, day_of_week=i, open_time=time(10, 0), close_time=time(19, 0), is_closed=False) for i in range(1, 7)
         ]
         # 週日公休
-        default_hours.append(models.BusinessHour(day_of_week=7, open_time=time(10, 0), close_time=time(19, 0), is_closed=True))
+        default_hours.append(models.BusinessHour(owner_id=current_user.id, day_of_week=7, open_time=time(10, 0), close_time=time(19, 0), is_closed=True))
         
         db.add_all(default_hours)
         db.commit()
@@ -518,36 +543,36 @@ async def get_business_settings(db: Session = Depends(get_db)):
     }
 
 @business_settings_router.put("/", response_model=schemas.BusinessSettingsResponse)
-async def update_business_settings(settings: schemas.BusinessSettingsUpdate, db: Session = Depends(get_db), current_user: schemas.UserResponse = Depends(get_current_admin_user)):
+async def update_business_settings(settings: schemas.BusinessSettingsUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_admin_user)):
     # 更新營業時間
     if settings.business_hours is not None:
-        db.query(models.BusinessHour).delete()
+        db.query(models.BusinessHour).filter(models.BusinessHour.owner_id == current_user.id).delete()
         for hour in settings.business_hours:
-            db_hour = models.BusinessHour(**hour.model_dump())
+            db_hour = models.BusinessHour(owner_id=current_user.id, **hour.model_dump())
             db.add(db_hour)
 
     # 更新假日
     if settings.holidays is not None:
-        db.query(models.Holiday).delete()
+        db.query(models.Holiday).filter(models.Holiday.owner_id == current_user.id).delete()
         for holiday in settings.holidays:
-            db_holiday = models.Holiday(**holiday.model_dump())
+            db_holiday = models.Holiday(owner_id=current_user.id, **holiday.model_dump())
             db.add(db_holiday)
 
     # 更新不可預約日期
     if settings.unavailable_dates is not None:
-        db.query(models.UnavailableDate).delete()
+        db.query(models.UnavailableDate).filter(models.UnavailableDate.owner_id == current_user.id).delete()
         for unavailable_date in settings.unavailable_dates:
-            db_unavailable_date = models.UnavailableDate(**unavailable_date.model_dump())
+            db_unavailable_date = models.UnavailableDate(owner_id=current_user.id, **unavailable_date.model_dump())
             db.add(db_unavailable_date)
 
     db.commit()
     db.refresh(current_user) # 刷新 current_user 以確保其是最新的
 
     # 返回更新後的完整設定
-    business_hours = db.query(models.BusinessHour).all()
-    holidays = db.query(models.Holiday).all()
-    unavailable_dates = db.query(models.UnavailableDate).all()
-    bookable_time_slots = db.query(models.BookableTimeSlot).all()
+    business_hours = db.query(models.BusinessHour).filter(models.BusinessHour.owner_id == current_user.id).all()
+    holidays = db.query(models.Holiday).filter(models.Holiday.owner_id == current_user.id).all()
+    unavailable_dates = db.query(models.UnavailableDate).filter(models.UnavailableDate.owner_id == current_user.id).all()
+    bookable_time_slots = db.query(models.BookableTimeSlot).filter(models.BookableTimeSlot.owner_id == current_user.id).all()
     
     return schemas.BusinessSettingsResponse(
         business_hours=business_hours,
@@ -557,34 +582,34 @@ async def update_business_settings(settings: schemas.BusinessSettingsUpdate, db:
     )
 
 @business_settings_router.put("/business-hours", response_model=List[schemas.BusinessHourResponse])
-async def update_business_hours(hours: List[schemas.BusinessHourCreate], db: Session = Depends(get_db), current_user: schemas.UserResponse = Depends(get_current_admin_user)):
+async def update_business_hours(hours: List[schemas.BusinessHourCreate], db: Session = Depends(get_db), current_user: models.User = Depends(get_current_admin_user)):
     # 簡單的更新邏輯：先刪除所有舊的，再新增新的
-    db.query(models.BusinessHour).delete()
+    db.query(models.BusinessHour).filter(models.BusinessHour.owner_id == current_user.id).delete()
     db.commit()
     
     new_hours = []
     for hour in hours:
-        db_hour = models.BusinessHour(**hour.model_dump())
+        db_hour = models.BusinessHour(owner_id=current_user.id, **hour.model_dump())
         db.add(db_hour)
         new_hours.append(db_hour)
     db.commit()
     return new_hours
 
 @business_settings_router.post("/holidays", response_model=schemas.HolidayResponse, status_code=status.HTTP_201_CREATED)
-async def add_holiday(holiday: schemas.HolidayCreate, db: Session = Depends(get_db), current_user: schemas.UserResponse = Depends(get_current_admin_user)):
-    db_holiday = db.query(models.Holiday).filter(models.Holiday.date == holiday.date).first()
+async def add_holiday(holiday: schemas.HolidayCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_admin_user)):
+    db_holiday = db.query(models.Holiday).filter(models.Holiday.date == holiday.date, models.Holiday.owner_id == current_user.id).first()
     if db_holiday:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Holiday already exists for this date")
     
-    db_holiday = models.Holiday(**holiday.model_dump())
+    db_holiday = models.Holiday(owner_id=current_user.id, **holiday.model_dump())
     db.add(db_holiday)
     db.commit()
     db.refresh(db_holiday)
     return db_holiday
 
 @business_settings_router.delete("/holidays/{holiday_date}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_holiday(holiday_date: date, db: Session = Depends(get_db), current_user: schemas.UserResponse = Depends(get_current_admin_user)):
-    db_holiday = db.query(models.Holiday).filter(models.Holiday.date == holiday_date).first()
+async def delete_holiday(holiday_date: date, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_admin_user)):
+    db_holiday = db.query(models.Holiday).filter(models.Holiday.date == holiday_date, models.Holiday.owner_id == current_user.id).first()
     if db_holiday is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Holiday not found")
     
@@ -593,20 +618,20 @@ async def delete_holiday(holiday_date: date, db: Session = Depends(get_db), curr
     return
 
 @business_settings_router.post("/unavailable-dates", response_model=schemas.UnavailableDateResponse, status_code=status.HTTP_201_CREATED)
-async def add_unavailable_date(unavailable_date: schemas.UnavailableDateCreate, db: Session = Depends(get_db), current_user: schemas.UserResponse = Depends(get_current_admin_user)):
-    db_unavailable_date = db.query(models.UnavailableDate).filter(models.UnavailableDate.date == unavailable_date.date).first()
+async def add_unavailable_date(unavailable_date: schemas.UnavailableDateCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_admin_user)):
+    db_unavailable_date = db.query(models.UnavailableDate).filter(models.UnavailableDate.date == unavailable_date.date, models.UnavailableDate.owner_id == current_user.id).first()
     if db_unavailable_date:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unavailable date already exists")
     
-    db_unavailable_date = models.UnavailableDate(**unavailable_date.model_dump())
+    db_unavailable_date = models.UnavailableDate(owner_id=current_user.id, **unavailable_date.model_dump())
     db.add(db_unavailable_date)
     db.commit()
     db.refresh(db_unavailable_date)
     return db_unavailable_date
 
 @business_settings_router.delete("/unavailable-dates/{unavailable_date}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_unavailable_date(unavailable_date: date, db: Session = Depends(get_db), current_user: schemas.UserResponse = Depends(get_current_admin_user)):
-    db_unavailable_date = db.query(models.UnavailableDate).filter(models.UnavailableDate.date == unavailable_date).first()
+async def delete_unavailable_date(unavailable_date: date, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_admin_user)):
+    db_unavailable_date = db.query(models.UnavailableDate).filter(models.UnavailableDate.date == unavailable_date, models.UnavailableDate.owner_id == current_user.id).first()
     if db_unavailable_date is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unavailable date not found")
     
@@ -615,16 +640,16 @@ async def delete_unavailable_date(unavailable_date: date, db: Session = Depends(
     return
 
 @business_settings_router.post("/time-slots", response_model=schemas.BookableTimeSlotResponse, status_code=status.HTTP_201_CREATED)
-async def add_time_slot(time_slot: schemas.BookableTimeSlotCreate, db: Session = Depends(get_db), current_user: schemas.UserResponse = Depends(get_current_admin_user)):
-    db_time_slot = models.BookableTimeSlot(**time_slot.model_dump())
+async def add_time_slot(time_slot: schemas.BookableTimeSlotCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_admin_user)):
+    db_time_slot = models.BookableTimeSlot(owner_id=current_user.id, **time_slot.model_dump())
     db.add(db_time_slot)
     db.commit()
     db.refresh(db_time_slot)
     return db_time_slot
 
 @business_settings_router.delete("/time-slots/{time_slot_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_time_slot(time_slot_id: int, db: Session = Depends(get_db), current_user: schemas.UserResponse = Depends(get_current_admin_user)):
-    db_time_slot = db.query(models.BookableTimeSlot).filter(models.BookableTimeSlot.id == time_slot_id).first()
+async def delete_time_slot(time_slot_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_admin_user)):
+    db_time_slot = db.query(models.BookableTimeSlot).filter(models.BookableTimeSlot.id == time_slot_id, models.BookableTimeSlot.owner_id == current_user.id).first()
     if db_time_slot is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Time slot not found")
     
@@ -664,6 +689,85 @@ async def change_password_me(password_update: schemas.PasswordUpdate, db: Sessio
     return {"message": "Password updated successfully"}
 
 app.include_router(user_router)
+
+public_router = APIRouter(prefix="/public", tags=["Public"])
+
+@public_router.get("/profile/{slug}", response_model=schemas.UserPublicProfileResponse)
+async def get_public_profile(slug: str, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.public_slug == slug, models.User.role == "admin").first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Public profile not found")
+    
+    services = db.query(models.Service).filter(models.Service.owner_id == user.id, models.Service.is_active == True).all()
+    business_hours = db.query(models.BusinessHour).filter(models.BusinessHour.owner_id == user.id).order_by(models.BusinessHour.day_of_week).all()
+    holidays = db.query(models.Holiday).filter(models.Holiday.owner_id == user.id).all()
+    unavailable_dates = db.query(models.UnavailableDate).filter(models.UnavailableDate.owner_id == user.id).all()
+    bookable_time_slots = db.query(models.BookableTimeSlot).filter(models.BookableTimeSlot.owner_id == user.id).all()
+
+    # 標準化營業時間輸出
+    standardized_hours = []
+    if len(business_hours) == 7:
+        for i, hour_model in enumerate(business_hours):
+            day_of_week_standard = i + 1
+            standardized_hours.append({
+                "id": day_of_week_standard,
+                "day_of_week": day_of_week_standard,
+                "open_time": hour_model.open_time.strftime('%H:%M:%S') if hour_model.open_time else None,
+                "close_time": hour_model.close_time.strftime('%H:%M:%S') if hour_model.close_time else None,
+                "is_closed": hour_model.is_closed
+            })
+
+    return schemas.UserPublicProfileResponse(
+        name=user.name,
+        email=user.email,
+        phone_number=user.phone_number,
+        avatar_url=user.avatar_url,
+        services=services,
+        business_hours=standardized_hours,
+        holidays=holidays,
+        unavailable_dates=unavailable_dates,
+        bookable_time_slots=bookable_time_slots
+    )
+
+@public_router.get("/bookings_by_slug/{slug}", response_model=List[schemas.BookingResponse])
+async def get_public_bookings_by_slug(slug: str, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.public_slug == slug, models.User.role == "admin").first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Public profile not found for the given slug")
+    
+    bookings_with_details = db.query(
+        models.Booking,
+        models.Service.name.label("service_name")
+    ).join(models.Service).filter(models.Booking.owner_id == user.id).all()
+
+    response_bookings = []
+    for booking, service_name in bookings_with_details:
+        client_name = None
+        if booking.user_id:
+            user = db.query(models.User).filter(models.User.id == booking.user_id).first()
+            if user: # 確保用戶存在
+                client_name = user.name
+        else:
+            client_name = booking.customer_name # 匿名預約使用 customer_name
+
+        response_data = {
+            "id": booking.id,
+            "booking_reference_id": booking.booking_reference_id,
+            "user_id": booking.user_id,
+            "service_id": booking.service_id,
+            "date": booking.date,
+            "time": booking.time,
+            "status": booking.status,
+            "notes": booking.notes if booking.notes is not None else "",
+            "created_at": booking.created_at,
+            "updated_at": booking.updated_at,
+            "clientName": client_name,
+            "serviceName": service_name,
+        }
+        response_bookings.append(schemas.BookingResponse(**response_data))
+    return response_bookings
+
+app.include_router(public_router)
 
 @app.get("/")
 async def read_root():

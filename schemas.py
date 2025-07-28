@@ -20,6 +20,7 @@ class UserResponse(UserBase):
     avatar_url: Optional[str] = None
     email_notifications_enabled: bool
     sms_notifications_enabled: bool
+    public_slug: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -27,6 +28,8 @@ class UserResponse(UserBase):
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
+
+
 
 class UserUpdate(BaseModel):
     name: Optional[str] = None
@@ -79,6 +82,7 @@ class BookingBase(BaseModel):
     customer_name: Optional[str] = None
     customer_email: Optional[EmailStr] = None
     customer_phone: Optional[str] = None
+    public_slug: Optional[str] = None # 新增 public_slug 欄位
 
 class BookingCreate(BookingBase):
     pass
@@ -184,6 +188,20 @@ class BusinessSettingsResponse(BaseModel):
     holidays: List[HolidayResponse]
     unavailable_dates: List[UnavailableDateResponse]
     bookable_time_slots: List[BookableTimeSlotResponse] # 新增可預約時間段落
+
+    class Config:
+        from_attributes = True
+
+class UserPublicProfileResponse(BaseModel):
+    name: str
+    email: EmailStr
+    phone_number: Optional[str] = None
+    avatar_url: Optional[str] = None
+    services: List[ServiceResponse]
+    business_hours: List[BusinessHourResponse]
+    holidays: List[HolidayResponse]
+    unavailable_dates: List[UnavailableDateResponse]
+    bookable_time_slots: List[BookableTimeSlotResponse]
 
     class Config:
         from_attributes = True

@@ -1,5 +1,5 @@
 from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, Time
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, Mapped, mapped_column
 from sqlalchemy.sql import func
 from database import Base # 從 database.py 導入 Base
 from datetime import datetime
@@ -16,9 +16,10 @@ class User(Base):
     role = Column(String, default="customer") # customer 或 admin
     email_notifications_enabled = Column(Boolean, default=True)
     sms_notifications_enabled = Column(Boolean, default=False)
+    public_slug: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=True)
     registration_date = Column(DateTime(timezone=True), server_default=func.now())
 
-    bookings = relationship("Booking", back_populates="user")
+    bookings = relationship("Booking", foreign_keys="[Booking.user_id]", back_populates="user")
 
     def __repr__(self):
         return f"<User(id={self.id}, email={self.email}, role={self.role})>"
@@ -27,6 +28,7 @@ class Service(Base):
     __tablename__ = "services"
 
     id = Column(Integer, primary_key=True, index=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     name = Column(String, unique=True, index=True, nullable=False)
     description = Column(String, nullable=True)
     price = Column(Float, nullable=False)
@@ -45,6 +47,7 @@ class Booking(Base):
     __tablename__ = 'bookings'
 
     id = Column(Integer, primary_key=True, index=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     booking_reference_id = Column(String, unique=True, index=True, nullable=True) # 新增預約編號欄位
     user_id = Column(Integer, ForeignKey('users.id'), nullable=True)
     service_id = Column(Integer, ForeignKey('services.id'))
@@ -58,8 +61,8 @@ class Booking(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    user = relationship("User", back_populates="bookings")
-    service = relationship("Service", back_populates="bookings")
+    user = relationship("User", foreign_keys="[Booking.user_id]", back_populates="bookings")
+    service = relationship("Service", foreign_keys="[Booking.service_id]", back_populates="bookings")
 
     def __repr__(self):
         return f"<Booking(id={self.id}, user_id={self.user_id}, service_id={self.service_id}, date={self.date}, status={self.status})>"
@@ -68,6 +71,7 @@ class BusinessHour(Base):
     __tablename__ = "business_hours"
 
     id = Column(Integer, primary_key=True, index=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     day_of_week = Column(Integer, nullable=False) # 0=Monday, 6=Sunday
     open_time = Column(Time, nullable=False)
     close_time = Column(Time, nullable=False)
@@ -80,6 +84,7 @@ class Holiday(Base):
     __tablename__ = "holidays"
 
     id = Column(Integer, primary_key=True, index=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     date = Column(DateTime, unique=True, nullable=False)
     description = Column(String, nullable=True)
 
@@ -90,6 +95,7 @@ class UnavailableDate(Base):
     __tablename__ = "unavailable_dates"
 
     id = Column(Integer, primary_key=True, index=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     date = Column(DateTime, unique=True, nullable=False)
     reason = Column(String, nullable=True)
 
@@ -100,6 +106,7 @@ class BookableTimeSlot(Base):
     __tablename__ = "bookable_time_slots"
 
     id = Column(Integer, primary_key=True, index=True)
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
     start_time = Column(Time, nullable=False)
     end_time = Column(Time, nullable=False)
 
