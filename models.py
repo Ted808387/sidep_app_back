@@ -46,12 +46,15 @@ class Booking(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     booking_reference_id = Column(String, unique=True, index=True, nullable=True) # 新增預約編號欄位
-    user_id = Column(Integer, ForeignKey('users.id'))
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=True)
     service_id = Column(Integer, ForeignKey('services.id'))
     date = Column(DateTime)
     time = Column(String)
     status = Column(String, default='pending')
     notes = Column(String, nullable=True, default='')
+    customer_name = Column(String, nullable=True)
+    customer_email = Column(String, nullable=True)
+    customer_phone = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

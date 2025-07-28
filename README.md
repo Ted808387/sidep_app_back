@@ -329,6 +329,26 @@
 
 **下一步：** 測試登出功能，確認 Token 是否正確失效。
 
+### **匿名預約功能**
+
+**目標：** 允許未登入使用者進行預約，並在後端正確處理匿名預約資訊。
+
+**進度：**
+
+1.  **後端 `sidep_backend/schemas.py`：**
+    *   `BookingBase` 中的 `user_id` 已改為 `Optional[int]`。
+    *   `BookingBase` 中新增 `customer_name: Optional[str]`, `customer_email: Optional[EmailStr]`, `customer_phone: Optional[str]` 欄位。✅
+2.  **後端 `sidep_backend/models.py`：**
+    *   `Booking` 模型中的 `user_id` 已設為 `nullable=True`。
+    *   `Booking` 模型中新增 `customer_name`, `customer_email`, `customer_phone` 欄位。✅
+3.  **後端 `sidep_backend/main.py`：**
+    *   新增 `get_optional_current_user` 依賴函數，用於獲取可選的當前使用者。
+    *   `create_booking` 路由已修改，支援匿名預約，並在 `user_id` 為 `None` 時使用客戶聯絡資訊。
+    *   `get_all_bookings` 路由已修改，能正確顯示匿名預約的客戶名稱。
+    *   `get_business_settings` 和 `get_all_bookings` 端點已修改為無需認證即可訪問，以支援前端匿名預約時獲取營業時間和已預約時間。✅
+
+**下一步：** 測試匿名預約功能，確保前後端協同工作正常。
+
 ### **Alembic 資料庫遷移工具整合**
 
 **目標：** 引入 Alembic 以便安全、高效地管理資料庫結構變更，避免手動刪除資料庫。

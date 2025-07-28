@@ -7,6 +7,8 @@ from typing import List, Optional
 from datetime import date, datetime, time, timedelta
 from jose import JWTError, jwt
 from fastapi.security import HTTPBearer
+from fastapi import Security
+from fastapi.security.http import HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 
 from database import engine, Base, get_db
@@ -26,8 +28,7 @@ app = FastAPI(
             "name": "Authorization",
             "description": "Enter your bearer token in the format **Bearer &lt;token&gt;**"
         }
-    },
-    security=[{"BearerAuth": []}]
+    }
 )
 
 origins = [
@@ -54,6 +55,7 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
 bearer_scheme = HTTPBearer() # 使用 HTTPBearer
+optional_bearer_scheme = HTTPBearer(auto_error=False) # 用於可選認證
 
 # 密碼雜湊上下文
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -69,8 +71,8 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-def get_current_user(credentials: HTTPBearer = Depends(bearer_scheme), db: Session = Depends(get_db)):
-    token = credentials.credentials # 從 HTTPBearer 獲取 token 字串
+def get_current_user(credentials: HTTPAuthorizationCredentials = Security(bearer_scheme), db: Session = Depends(get_db)):
+    token = credentials.credentials
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -92,6 +94,25 @@ def get_current_user(credentials: HTTPBearer = Depends(bearer_scheme), db: Sessi
     user = db.query(models.User).filter(models.User.id == int(user_id)).first()
     if user is None:
         raise credentials_exception
+    return user
+
+async def get_optional_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Security(optional_bearer_scheme), db: Session = Depends(get_db)) -> Optional[models.User]:
+    if credentials is None:
+        return None
+    token = credentials.credentials
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            return None
+    except JWTError:
+        return None
+
+    blacklisted_token = db.query(models.BlacklistedToken).filter(models.BlacklistedToken.token == token).first()
+    if blacklisted_token:
+        return None
+
+    user = db.query(models.User).filter(models.User.id == int(user_id)).first()
     return user
 
 def get_current_admin_user(current_user: schemas.UserResponse = Depends(get_current_user)):
@@ -240,17 +261,37 @@ app.include_router(service_router)
 booking_router = APIRouter(prefix="/bookings", tags=["Bookings"])
 
 @booking_router.post("/", response_model=schemas.BookingResponse, status_code=status.HTTP_201_CREATED)
-async def create_booking(booking: schemas.BookingCreate, db: Session = Depends(get_db), current_user: schemas.UserResponse = Depends(get_current_user)):
-    if booking.user_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot create booking for another user")
+async def create_booking(
+    booking: schemas.BookingCreate,
+    db: Session = Depends(get_db),
+    current_user: Optional[schemas.UserResponse] = Depends(get_optional_current_user)
+):
+    # 如果提供了 user_id，則檢查是否與當前登入用戶匹配
+    # 管理員可以為任何用戶創建預約，所以如果當前用戶是管理員，則跳過此檢查
+    if booking.user_id is not None:
+        if current_user is None or (current_user.role != "admin" and booking.user_id != current_user.id):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot create booking for another user or without proper authentication")
+    else:
+        # 如果沒有提供 user_id，則必須提供客戶姓名、Email和電話
+        if not booking.customer_name or not booking.customer_email or not booking.customer_phone:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Customer name, email, and phone are required for anonymous bookings")
 
     service = db.query(models.Service).filter(models.Service.id == booking.service_id).first()
     if service is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Service not found")
 
-    db_booking = models.Booking(**booking.model_dump())
-    if db_booking.notes is None:
-        db_booking.notes = ""
+    db_booking = models.Booking(
+        user_id=booking.user_id,
+        service_id=booking.service_id,
+        date=booking.date,
+        time=booking.time,
+        status=booking.status,
+        notes=booking.notes if booking.notes is not None else "",
+        customer_name=booking.customer_name,
+        customer_email=booking.customer_email,
+        customer_phone=booking.customer_phone
+    )
+    
     db.add(db_booking)
     db.flush() # 確保 db_booking.id 被賦值
 
@@ -262,14 +303,22 @@ async def create_booking(booking: schemas.BookingCreate, db: Session = Depends(g
     db.refresh(db_booking)
 
     # 查詢完整的預約資訊以回傳
-    booking_response = db.query(models.Booking).options(
-        joinedload(models.Booking.user),
-        joinedload(models.Booking.service)
-    ).filter(models.Booking.id == db_booking.id).first()
+    # 對於匿名預約，不需要 joinedload user
+    if db_booking.user_id:
+        booking_response = db.query(models.Booking).options(
+            joinedload(models.Booking.user),
+            joinedload(models.Booking.service)
+        ).filter(models.Booking.id == db_booking.id).first()
+        client_name = booking_response.user.name
+    else:
+        booking_response = db.query(models.Booking).options(
+            joinedload(models.Booking.service)
+        ).filter(models.Booking.id == db_booking.id).first()
+        client_name = booking_response.customer_name
 
     return schemas.BookingResponse(
         id=booking_response.id,
-        booking_reference_id=booking_response.booking_reference_id, # 新增回傳
+        booking_reference_id=booking_response.booking_reference_id,
         user_id=booking_response.user_id,
         service_id=booking_response.service_id,
         date=booking_response.date,
@@ -278,7 +327,7 @@ async def create_booking(booking: schemas.BookingCreate, db: Session = Depends(g
         notes=booking_response.notes,
         created_at=booking_response.created_at,
         updated_at=booking_response.updated_at,
-        clientName=booking_response.user.name,
+        clientName=client_name,
         serviceName=booking_response.service.name
     )
 
@@ -310,24 +359,31 @@ async def get_my_bookings(db: Session = Depends(get_db), current_user: schemas.U
     return response_bookings
 
 @booking_router.get("/", response_model=List[schemas.BookingResponse])
-async def get_all_bookings(db: Session = Depends(get_db), current_user: schemas.UserResponse = Depends(get_current_admin_user)):
+async def get_all_bookings(db: Session = Depends(get_db)):
     bookings_with_details = db.query(
         models.Booking,
-        models.User.name.label("client_name"),
         models.Service.name.label("service_name")
-    ).join(models.User).join(models.Service).all()
+    ).join(models.Service).all()
 
-    # 將查詢結果轉換為 BookingResponse 列表
     response_bookings = []
-    for booking, client_name, service_name in bookings_with_details:
+    for booking, service_name in bookings_with_details:
+        client_name = None
+        if booking.user_id:
+            user = db.query(models.User).filter(models.User.id == booking.user_id).first()
+            if user: # 確保用戶存在
+                client_name = user.name
+        else:
+            client_name = booking.customer_name # 匿名預約使用 customer_name
+
         response_data = {
             "id": booking.id,
+            "booking_reference_id": booking.booking_reference_id,
             "user_id": booking.user_id,
             "service_id": booking.service_id,
             "date": booking.date,
             "time": booking.time,
             "status": booking.status,
-            "notes": booking.notes if booking.notes is not None else "", # 處理 notes 為 None 的情況
+            "notes": booking.notes if booking.notes is not None else "",
             "created_at": booking.created_at,
             "updated_at": booking.updated_at,
             "clientName": client_name,
@@ -420,7 +476,7 @@ app.include_router(client_router)
 business_settings_router = APIRouter(prefix="/admin/settings", tags=["Admin - Business Settings"])
 
 @business_settings_router.get("/", response_model=schemas.BusinessSettingsResponse)
-async def get_business_settings(db: Session = Depends(get_db), current_user: schemas.UserResponse = Depends(get_current_admin_user)):
+async def get_business_settings(db: Session = Depends(get_db)):
     business_hours_from_db = db.query(models.BusinessHour).order_by(models.BusinessHour.id).all()
     holidays = db.query(models.Holiday).all()
     unavailable_dates = db.query(models.UnavailableDate).all()
@@ -447,7 +503,7 @@ async def get_business_settings(db: Session = Depends(get_db), current_user: sch
             # ISO 8601 標準: 星期一=1, 星期日=7
             day_of_week_standard = i + 1
             standardized_hours.append({
-                "id": hour_model.id,
+                "id": day_of_week_standard,
                 "day_of_week": day_of_week_standard,
                 "open_time": hour_model.open_time.strftime('%H:%M:%S') if hour_model.open_time else None,
                 "close_time": hour_model.close_time.strftime('%H:%M:%S') if hour_model.close_time else None,

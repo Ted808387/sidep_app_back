@@ -70,12 +70,15 @@ class BulkServiceActionRequest(BaseModel):
 
 # Booking Schemas
 class BookingBase(BaseModel):
-    user_id: int
+    user_id: Optional[int] = None # 允許為 None，表示匿名預約
     service_id: int
     date: date # 僅日期部分
     time: str # 儲存時間字串，例如 "10:00"
     status: Optional[str] = "pending"
     notes: Optional[str] = None
+    customer_name: Optional[str] = None
+    customer_email: Optional[EmailStr] = None
+    customer_phone: Optional[str] = None
 
 class BookingCreate(BookingBase):
     pass
@@ -83,7 +86,7 @@ class BookingCreate(BookingBase):
 class BookingResponse(BaseModel):
     id: int
     booking_reference_id: Optional[str] = None # 新增預約編號
-    user_id: int
+    user_id: Optional[int] = None
     service_id: int
     date: date
     time: str
