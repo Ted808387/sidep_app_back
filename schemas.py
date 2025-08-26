@@ -100,6 +100,8 @@ class BookingResponse(BaseModel):
     updated_at: Optional[datetime] = None
     clientName: Optional[str] = None
     serviceName: Optional[str] = None
+    customer_email: Optional[str] = None
+    customer_phone: Optional[str] = None
 
     class Config:
         from_attributes = True

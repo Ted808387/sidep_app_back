@@ -353,7 +353,9 @@ async def create_booking(
         created_at=booking_response.created_at,
         updated_at=booking_response.updated_at,
         clientName=client_name,
-        serviceName=booking_response.service.name
+        serviceName=booking_response.service.name,
+        customer_email=booking_response.customer_email,
+        customer_phone=booking_response.customer_phone
     )
 
 @booking_router.get("/my", response_model=List[schemas.BookingResponse])
@@ -379,6 +381,8 @@ async def get_my_bookings(db: Session = Depends(get_db), current_user: models.Us
             "updated_at": booking.updated_at,
             "clientName": client_name,
             "serviceName": service_name,
+            "customer_email": None,
+            "customer_phone": None,
         }
         response_bookings.append(schemas.BookingResponse(**response_data))
     return response_bookings
@@ -413,6 +417,8 @@ async def get_all_bookings(db: Session = Depends(get_db), current_user: models.U
             "updated_at": booking.updated_at,
             "clientName": client_name,
             "serviceName": service_name,
+            "customer_email": booking.customer_email,
+            "customer_phone": booking.customer_phone,
         }
         response_bookings.append(schemas.BookingResponse(**response_data))
     return response_bookings
